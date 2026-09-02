@@ -86,6 +86,16 @@ const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:
 
 let inscripcionesUnsub = null;
 
+/* Elements that have already played their reveal-in animation once, keyed by a stable
+   data-reveal-id. The whole page re-renders (innerHTML) on every state change, so without
+   this the fade/slide-in would replay every time — this makes each element animate in only
+   the first time it's ever seen, no matter how many times mount() re-runs afterward. */
+var revealedSet = new Set();
+function revealBits(id){
+  var seen = revealedSet.has(id);
+  return { cls: seen ? " reveal in" : " reveal", attr: ' data-reveal-id="'+id+'"' };
+}
+
 /* ---------- helpers ---------- */
 function uid(prefix){ return prefix + "_" + Math.random().toString(36).slice(2,9); }
 function valOf(id){ var el = document.getElementById(id); return el ? el.value.trim() : ""; }
@@ -191,46 +201,64 @@ function renderHeader(){
     + '</header>';
 }
 function renderHero(){
-  return '<section class="hero" id="inicio"><span class="hero-num" aria-hidden="true">8</span>'
+  var animCls = revealedSet.has("hero") ? "" : " hero-animate";
+  revealedSet.add("hero");
+  var court = '<svg class="hero-court" viewBox="0 0 800 500" aria-hidden="true" focusable="false">'
+    + '<rect x="40" y="40" width="720" height="420" fill="none" stroke="currentColor" stroke-width="3"/>'
+    + '<line x1="40" y1="250" x2="760" y2="250" stroke="currentColor" stroke-width="5"/>'
+    + '<line x1="400" y1="40" x2="400" y2="460" stroke="currentColor" stroke-width="2"/>'
+    + '<line x1="40" y1="145" x2="760" y2="145" stroke="currentColor" stroke-width="2"/>'
+    + '<line x1="40" y1="355" x2="760" y2="355" stroke="currentColor" stroke-width="2"/>'
+    + '</svg>';
+  return '<section class="hero'+animCls+'" id="inicio"><span class="hero-num" aria-hidden="true">8</span>'
+    + court
     + '<div class="hero-inner">'
     + '<p class="hero-eyebrow">Equipo 8 · Padel Club Alicante Indoor</p>'
     + '<h1 class="hero-title">EIGHT<span class="dot">.</span></h1>'
     + '<p class="hero-brand-sub">Club</p>'
     + '<p class="hero-subtitle">Quinta Masculina</p>'
     + '<p class="hero-text">El circuito de pádel nacido del Equipo 8 en Padel Club Alicante Indoor. Fase de liga todos contra todos y después cuadros eliminatorios: sigue cada resultado en directo, en esta misma página.</p>'
-    + '<div class="hero-actions"><a href="#inscripcion" class="btn btn-primary">Apúntate</a><a href="#liga" class="btn btn-ghost">Ver liga y cuadros</a></div>'
+    + '<div class="hero-actions"><a href="#inscripcion" class="btn btn-primary">Apúntate</a><a href="#liga" class="btn btn-ghost">Ver liga y cuadros</a><span class="bounce-dot" aria-hidden="true"></span></div>'
     + '<p class="hero-next">Próxima edición: <strong>EIGHT. / Winter Series</strong> — Próximamente. EIGHT. sigue temporada tras temporada.</p>'
     + '</div></section>';
 }
 function renderStats(){
   var i = STATE.info;
   return '<div class="section-inner"><div class="stats">'
-    + statTile("Categoría", i.categoria) + statTile("Sede", i.sede)
-    + statTile("Fechas", i.fechas || "Próximamente") + statTile("Inscripción", i.plazo || "Próximamente")
+    + statTile("stat-categoria","Categoría", i.categoria) + statTile("stat-sede","Sede", i.sede)
+    + statTile("stat-fechas","Fechas", i.fechas || "Próximamente") + statTile("stat-plazo","Inscripción", i.plazo || "Próximamente")
     + '</div></div>';
 }
-function statTile(label, value){ return '<div class="stat-tile"><div class="label">'+escHtml(label)+'</div><div class="value">'+escHtml(value)+'</div></div>'; }
+function statTile(id, label, value){
+  var b = revealBits(id); revealedSet.add(id);
+  return '<div class="stat-tile'+b.cls+'"'+b.attr+'><div class="label">'+escHtml(label)+'</div><div class="value">'+escHtml(value)+'</div></div>';
+}
 
 function renderFormato(){
+  var bLiga = revealBits("formato-liga"); revealedSet.add("formato-liga");
+  var bCuadros = revealBits("formato-cuadros"); revealedSet.add("formato-cuadros");
+  var bPts = revealBits("rule-puntuacion"); revealedSet.add("rule-puntuacion");
+  var bDesempate = revealBits("rule-desempate"); revealedSet.add("rule-desempate");
+  var bReglas = revealBits("rule-reglas"); revealedSet.add("rule-reglas");
   return '<section id="formato" class="section"><div class="section-inner">'
     + '<p class="eyebrow">Formato</p>'
     + '<div class="formato-steps">'
-    +   '<div class="formato-card"><div class="step-num">FASE 1</div><h3>Liga</h3><p>Todas las parejas confirmadas se enfrentan entre sí una vez. Los puntos de cada partido dependen del resultado — mira la tabla de puntuación aquí abajo.</p></div>'
-    +   '<div class="formato-card"><div class="step-num">FASE 2</div><h3>Cuadros</h3><p>Eliminación directa hasta la final. La composición del cuadro se publicará en cuanto termine la liga.</p></div>'
+    +   '<div class="formato-card'+bLiga.cls+'"'+bLiga.attr+'><div class="step-num">FASE 1</div><h3>Liga</h3><p>Todas las parejas confirmadas se enfrentan entre sí una vez. Los puntos de cada partido dependen del resultado — mira la tabla de puntuación aquí abajo.</p></div>'
+    +   '<div class="formato-card'+bCuadros.cls+'"'+bCuadros.attr+'><div class="step-num">FASE 2</div><h3>Cuadros</h3><p>Eliminación directa hasta la final. La composición del cuadro se publicará en cuanto termine la liga.</p></div>'
     + '</div>'
     + '<div class="rules-grid">'
-    +   '<div class="rule-card"><h3>Puntuación por partido</h3><ul class="rule-list">'
+    +   '<div class="rule-card'+bPts.cls+'"'+bPts.attr+'><h3>Puntuación por partido</h3><ul class="rule-list">'
     +     '<li><span>Ganas 2-0</span><strong>3 puntos</strong></li>'
     +     '<li><span>Ganas 2-1</span><strong>2 puntos</strong></li>'
     +     '<li><span>Pierdes 1-2</span><strong>1 punto</strong></li>'
     +     '<li><span>Pierdes 0-2</span><strong>0 puntos</strong></li>'
     +   '</ul></div>'
-    +   '<div class="rule-card"><h3>Desempate a puntos</h3><ol class="rule-list rule-list--ordered">'
+    +   '<div class="rule-card'+bDesempate.cls+'"'+bDesempate.attr+'><h3>Desempate a puntos</h3><ol class="rule-list rule-list--ordered">'
     +     '<li>Enfrentamiento directo entre las parejas empatadas</li>'
     +     '<li>Diferencia de sets (a favor menos en contra)</li>'
     +     '<li>Diferencia de juegos (a favor menos en contra)</li>'
     +   '</ol></div>'
-    +   '<div class="rule-card"><h3>Reglas del partido</h3><ul class="rule-list rule-list--bullets">'
+    +   '<div class="rule-card'+bReglas.cls+'"'+bReglas.attr+'><h3>Reglas del partido</h3><ul class="rule-list rule-list--bullets">'
     +     '<li>Partidos al mejor de 3 sets</li>'
     +     '<li>Star Point: máximo dos ventajas seguidas; al tercer 40 iguales se decide con un único punto, y elige el lado de saque la pareja que resta</li>'
     +     '<li>Empate a 6 juegos (6-6) en un set: se decide con tie-break</li>'
@@ -248,7 +276,8 @@ function renderCtaBand(){
 function renderFAQ(){
   var rows = STATE.faqs.map(function(f){
     var open = ui.openFaq === f.id;
-    return '<div class="faq-item">'
+    var b = revealBits("faq-"+f.id); revealedSet.add("faq-"+f.id);
+    return '<div class="faq-item'+b.cls+'"'+b.attr+'>'
       + '<button class="faq-q" data-action="toggle-faq" data-id="'+f.id+'" type="button" aria-expanded="'+(open?"true":"false")+'">'+escHtml(f.q)+'<span class="faq-icon">'+(open?"−":"+")+'</span></button>'
       + (open ? '<div class="faq-a"><p>'+escHtml(f.a)+'</p></div>' : "")
       + '</div>';
@@ -311,17 +340,19 @@ function renderMatchesByJornada(){
   STATE.matches.forEach(function(m){ (byJ[m.jornada]=byJ[m.jornada]||[]).push(m); });
   var jornadas = Object.keys(byJ).map(Number).sort(function(a,b){return a-b;});
   return '<div class="jornadas">' + jornadas.map(function(j){
-    return '<div class="jornada"><h3>Jornada '+j+'</h3><ul class="match-list">' + byJ[j].map(renderMatchRow).join("") + '</ul></div>';
+    var b = revealBits("jornada-"+j); revealedSet.add("jornada-"+j);
+    return '<div class="jornada'+b.cls+'"'+b.attr+'><h3>Jornada '+j+'</h3><ul class="match-list">' + byJ[j].map(renderMatchRow).join("") + '</ul></div>';
   }).join("") + '</div>';
 }
 function renderMatchRow(m){
   var labelA = pairLabel(m.pairA), labelB = pairLabel(m.pairB), scoreHtml;
+  var b = revealBits("match-"+m.id); revealedSet.add("match-"+m.id);
   if (m.played){
     scoreHtml = '<span class="score">'+m.setsA+'-'+m.setsB+'</span>' + (m.marcador ? '<span class="marcador-detalle">'+escHtml(m.marcador)+'</span>' : "");
   } else {
     scoreHtml = '<span class="badge badge--pending">Pendiente</span>';
   }
-  return '<li class="match-row">'
+  return '<li class="match-row'+b.cls+'"'+b.attr+'>'
     + '<span class="'+(m.played && m.setsA>m.setsB ? "winner":"")+'">'+escHtml(labelA)+'</span>'
     + '<span class="vs">vs</span>'
     + '<span class="'+(m.played && m.setsB>m.setsA ? "winner":"")+'">'+escHtml(labelB)+'</span>'
@@ -335,10 +366,11 @@ function renderCuadros(){
   if (!STATE.bracket.length){
     body = emptyState("Cuadros pendientes de publicar", "Los cuadros eliminatorios se publicarán al terminar la fase de liga.");
   } else {
-    body = '<div class="bracket">' + STATE.bracket.map(function(r){
+    body = '<div class="bracket">' + STATE.bracket.map(function(r, ri){
       return '<div class="bracket-round"><h3>'+escHtml(r.name)+'</h3>'
-        + r.matches.map(function(m){
-            return '<div class="bracket-match">'
+        + r.matches.map(function(m, mi){
+            var b = revealBits("bracket-"+ri+"-"+mi); revealedSet.add("bracket-"+ri+"-"+mi);
+            return '<div class="bracket-match'+b.cls+'"'+b.attr+'>'
               + '<div class="'+(m.ganador && m.ganador===m.a ? "winner":"")+'">'+escHtml(m.a)+'</div>'
               + '<div class="'+(m.ganador && m.ganador===m.b ? "winner":"")+'">'+escHtml(m.b)+'</div>'
               + (m.resultado ? '<div class="bracket-score">'+escHtml(m.resultado)+'</div>' : "")
@@ -526,6 +558,25 @@ function renderApp(){
     + renderLiga() + renderCuadros() + renderFAQ() + renderContacto() + '</main>'
     + renderFooter() + renderOrganizer();
 }
+var revealObserver = null;
+function setupReveal(){
+  if (revealObserver) revealObserver.disconnect();
+  if (typeof IntersectionObserver === "undefined") return;
+  revealObserver = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      if (!entry.isIntersecting) return;
+      var el = entry.target;
+      var id = el.getAttribute("data-reveal-id");
+      el.classList.add("in");
+      if (id) revealedSet.add(id);
+      revealObserver.unobserve(el);
+    });
+  }, { threshold: 0.15, rootMargin: "0px 0px -40px 0px" });
+  document.querySelectorAll(".reveal:not(.in)").forEach(function(el){
+    revealObserver.observe(el);
+  });
+}
+
 function mount(){
   document.getElementById("app").innerHTML = renderApp();
   wireInscripcionForm();
@@ -534,6 +585,7 @@ function mount(){
     if (input) input.focus();
   }
   updateBackToTop();
+  setupReveal();
 }
 
 function isValidContact(v){
