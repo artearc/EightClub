@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://artearc.github.io/circuito-8/sitemap.xml
