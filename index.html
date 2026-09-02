@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Circuito 8 — Padel Club Alicante Indoor</title>
-<meta name="description" content="Circuito 8: liga y cuadros eliminatorios de pádel del Equipo 8 en Padel Club Alicante Indoor. Clasificación, calendario e inscripciones en tiempo real.">
+<title>EIGHT. Club — Padel Club Alicante Indoor</title>
+<meta name="description" content="EIGHT. Club: liga y cuadros eliminatorios de pádel del Equipo 8 en Padel Club Alicante Indoor. Clasificación, calendario e inscripciones en tiempo real.">
 <link rel="canonical" href="https://artearc.github.io/circuito-8/">
 <link rel="icon" type="image/png" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Circuito 8">
-<meta property="og:title" content="Circuito 8 — Padel Club Alicante Indoor">
+<meta property="og:site_name" content="EIGHT. Club">
+<meta property="og:title" content="EIGHT. Club — Padel Club Alicante Indoor">
 <meta property="og:description" content="Liga y cuadros eliminatorios de pádel del Equipo 8. Clasificación, calendario e inscripciones en tiempo real.">
 <meta property="og:image" content="https://artearc.github.io/circuito-8/og-image.jpg">
 <meta property="og:image:width" content="1200">
@@ -18,12 +18,13 @@
 <meta property="og:url" content="https://artearc.github.io/circuito-8/">
 <meta property="og:locale" content="es_ES">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Circuito 8 — Padel Club Alicante Indoor">
+<meta name="twitter:title" content="EIGHT. Club — Padel Club Alicante Indoor">
 <meta name="twitter:description" content="Liga y cuadros eliminatorios de pádel del Equipo 8. Clasificación, calendario e inscripciones en tiempo real.">
 <meta name="twitter:image" content="https://artearc.github.io/circuito-8/og-image.jpg">
+<meta name="theme-color" content="#101114">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Silkscreen&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -181,9 +182,9 @@ var NAV_LINKS = [["#formato","Formato"],["#inscripcion","Inscripción"],["#liga"
 function renderHeader(){
   var navLinks = NAV_LINKS.map(function(l){ return '<a href="'+l[0]+'">'+l[1]+'</a>'; }).join("");
   return '<header class="site-header"><div class="header-inner">'
-    + '<a href="#inicio" class="header-logo"><img src="logo.png" width="700" height="170" alt="Padel Club Alicante Indoor"></a>'
+    + '<a href="#inicio" class="header-logo"><span class="brand-mark">EIGHT<span class="dot">.</span></span><span class="brand-sub">Club</span></a>'
     + '<nav class="header-nav">' + navLinks + '</nav>'
-    + '<button class="header-lock" data-action="open-organizer" type="button">🔒 <span class="lock-label">Organizador</span></button>'
+    + '<button class="header-lock" data-action="open-organizer" type="button"><span class="dot"></span> <span class="lock-label">Organizador</span></button>'
     + '<button class="mobile-menu-btn" data-action="toggle-mobile-menu" type="button" aria-label="Abrir menú" aria-expanded="'+(ui.mobileMenuOpen?"true":"false")+'">'+(ui.mobileMenuOpen?"✕":"☰")+'</button>'
     + '</div>'
     + (ui.mobileMenuOpen ? '<nav class="mobile-nav-panel open">' + NAV_LINKS.map(function(l){ return '<a href="'+l[0]+'" data-action="close-mobile-menu">'+l[1]+'</a>'; }).join("") + '</nav>' : '')
@@ -192,12 +193,13 @@ function renderHeader(){
 function renderHero(){
   return '<section class="hero" id="inicio"><span class="hero-num" aria-hidden="true">8</span>'
     + '<div class="hero-inner">'
-    + '<p class="hero-eyebrow">Padel Club Alicante Indoor · Equipo 8</p>'
-    + '<h1 class="hero-title">Circuito 8</h1>'
+    + '<p class="hero-eyebrow">Equipo 8 · Padel Club Alicante Indoor</p>'
+    + '<h1 class="hero-title">EIGHT<span class="dot">.</span></h1>'
+    + '<p class="hero-brand-sub">Club</p>'
     + '<p class="hero-subtitle">Quinta Masculina</p>'
-    + '<p class="hero-text">El circuito de pádel del Equipo 8 en Padel Club Alicante Indoor. Fase de liga todos contra todos y después cuadros eliminatorios: sigue cada resultado en directo, en esta misma página.</p>'
+    + '<p class="hero-text">El circuito de pádel nacido del Equipo 8 en Padel Club Alicante Indoor. Fase de liga todos contra todos y después cuadros eliminatorios: sigue cada resultado en directo, en esta misma página.</p>'
     + '<div class="hero-actions"><a href="#inscripcion" class="btn btn-primary">Apúntate</a><a href="#liga" class="btn btn-ghost">Ver liga y cuadros</a></div>'
-    + '<p class="hero-next">Próxima edición: <strong>Circuito 8 · Invierno</strong> — Próximamente. El Circuito 8 continúa temporada tras temporada.</p>'
+    + '<p class="hero-next">Próxima edición: <strong>EIGHT. / Winter Series</strong> — Próximamente. EIGHT. sigue temporada tras temporada.</p>'
     + '</div></section>';
 }
 function renderStats(){
@@ -239,7 +241,7 @@ function renderFormato(){
 }
 function renderCtaBand(){
   return '<div class="cta-band"><div class="cta-band-inner">'
-    + '<div><h3>¿Ya tenéis pareja?</h3><p>Apúntate al Circuito 8 y sigue tu liga y tus cuadros en esta misma página.</p></div>'
+    + '<div><h3>¿Ya tenéis pareja?</h3><p>Apúntate a EIGHT. y sigue tu liga y tus cuadros en esta misma página.</p></div>'
     + '<a href="#inscripcion" class="btn btn-primary">Apúntate</a>'
     + '</div></div>';
 }
@@ -262,7 +264,7 @@ function renderInscripcion(){
   if (ui.inscripcionSent){
     return '<section id="inscripcion" class="section section--alt"><div class="section-inner">'
       + '<p class="eyebrow">Inscripción</p><h2 class="section-title">Apúntate con tu pareja</h2>'
-      + '<div class="insc-success"><div class="big">¡Solicitud enviada! 🎾</div><p>La hemos registrado. Os confirmaremos la plaza por email o teléfono en cuanto la revisemos.</p></div>'
+      + '<div class="insc-success"><div class="big">¡Solicitud enviada! <span class="dot-accent">·</span></div><p>La hemos registrado. Os confirmaremos la plaza por email o teléfono en cuanto la revisemos.</p></div>'
       + '</div></section>';
   }
   return '<section id="inscripcion" class="section section--alt"><div class="section-inner">'
@@ -352,23 +354,23 @@ function renderCuadros(){
 }
 function renderContacto(){
   return '<section id="contacto" class="section"><div class="section-inner">'
-    + '<p class="eyebrow">Contacto</p><h2 class="section-title">¿Dudas sobre el Circuito 8?</h2>'
+    + '<p class="eyebrow">Contacto</p><h2 class="section-title">¿Dudas sobre EIGHT.?</h2>'
     + '<p class="section-lead">Escríbenos y te respondemos en menos de 24 horas.</p>'
     + '<div class="contact-actions">'
-    +   '<a class="btn btn-outline" href="mailto:'+CONTACT_EMAIL+'">✉️ '+CONTACT_EMAIL+'</a>'
-    +   '<a class="btn btn-outline" href="'+CONTACT_WHATSAPP_LINK+'" target="_blank" rel="noopener">💬 WhatsApp: '+CONTACT_WHATSAPP_LABEL+'</a>'
+    +   '<a class="btn btn-outline" href="mailto:'+CONTACT_EMAIL+'">Email: '+CONTACT_EMAIL+'</a>'
+    +   '<a class="btn btn-outline" href="'+CONTACT_WHATSAPP_LINK+'" target="_blank" rel="noopener">WhatsApp: '+CONTACT_WHATSAPP_LABEL+'</a>'
     + '</div>'
     + '<div class="venue-block">'
-    +   '<div class="venue-info"><h3>Cómo llegar</h3><p>'+escHtml(STATE.info.sede)+'<br>'+escHtml(VENUE_ADDRESS)+'</p><a class="btn btn-outline btn-sm" href="'+VENUE_MAPS_LINK+'" target="_blank" rel="noopener">📍 Indicaciones</a></div>'
+    +   '<div class="venue-info"><h3>Cómo llegar</h3><p>'+escHtml(STATE.info.sede)+'<br>'+escHtml(VENUE_ADDRESS)+'</p><a class="btn btn-outline btn-sm" href="'+VENUE_MAPS_LINK+'" target="_blank" rel="noopener">Indicaciones</a></div>'
     +   '<div class="venue-map"><iframe src="'+VENUE_MAPS_EMBED+'" loading="lazy" referrerpolicy="no-referrer-when-downgrade" title="Mapa de Padel Club Alicante Indoor"></iframe></div>'
     + '</div>'
     + '</div></section>';
 }
 function renderFooter(){
   return '<footer class="site-footer"><div class="footer-inner">'
-    + '<img src="logo.png" width="700" height="170" alt="Padel Club Alicante Indoor">'
-    + '<p class="footer-note"><strong>Circuito 8</strong> es el circuito de pádel del Equipo 8 en Padel Club Alicante Indoor. Próxima edición: Invierno — Próximamente.</p>'
-    + '</div><p class="footer-copy">Circuito 8 · Equipo 8 · Padel Club Alicante Indoor</p>'
+    + '<span class="brand-mark">EIGHT<span class="dot">.</span></span>'
+    + '<p class="footer-note"><strong>EIGHT.</strong> es el circuito de pádel nacido del Equipo 8 en Padel Club Alicante Indoor. Próxima edición: Winter Series — Próximamente.</p>'
+    + '</div><p class="footer-copy">EIGHT. Club · Equipo 8 · Padel Club Alicante Indoor</p>'
     + '<p class="footer-legal"><a href="privacidad.html">Política de privacidad</a></p></footer>';
 }
 
