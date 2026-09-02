@@ -29,7 +29,6 @@
 <body>
 <div id="app"></div>
 <button id="back-to-top" class="back-to-top" type="button" aria-label="Volver arriba">↑</button>
-<div id="mobile-cta-bar" class="mobile-cta-bar"><a href="#inscripcion" class="btn btn-primary">Apúntate al Circuito 8</a></div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -65,7 +64,6 @@ const DEFAULT_FAQS = [
   { id:"f1", q:"¿Cómo me apunto?", a:"Rellena el formulario de la sección Inscripción con los datos de la pareja. El organizador revisa la solicitud y os confirma la plaza." },
   { id:"f2", q:"¿Cómo funciona el pago de la inscripción?", a:"El precio y la forma de pago se confirman junto con la plaza; en cuanto estén cerrados los verás también en la sección Inscripción." },
   { id:"f3", q:"¿Qué pasa si no puedo jugar algún día?", a:"Escríbenos por WhatsApp o email en cuanto lo sepas y buscamos la mejor solución para reprogramar el partido." },
-  { id:"f4", q:"¿Puedo apuntarme si soy nuevo en el club?", a:"Sí, el Circuito 8 está abierto a cualquier pareja de la categoría Quinta Masculina del club." },
   { id:"f5", q:"¿Qué formato tiene el torneo?", a:"Primero una liga en la que todas las parejas se enfrentan entre sí, y después cuadros eliminatorios. Puedes ver el detalle completo (puntuación, desempates y reglas del partido) en la sección Formato." },
   { id:"f6", q:"¿Dónde se juegan los partidos?", a:"En Padel Club Alicante Indoor. Tienes el mapa y cómo llegar en la sección Contacto." }
 ];
@@ -83,7 +81,7 @@ const STATE = {
   inscripciones: []
 };
 
-const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:"", saveType:"", loginError:false, mobileMenuOpen:false, authUser:null, openFaq:null, showBackTop:false, showMobileCta:false };
+const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:"", saveType:"", loginError:false, mobileMenuOpen:false, authUser:null, openFaq:null, showBackTop:false, faqDeleteConfirm:null };
 
 let inscripcionesUnsub = null;
 
@@ -213,8 +211,7 @@ function statTile(label, value){ return '<div class="stat-tile"><div class="labe
 
 function renderFormato(){
   return '<section id="formato" class="section"><div class="section-inner">'
-    + '<p class="eyebrow">Formato</p><h2 class="section-title">Liga y después cuadros, como en la Champions</h2>'
-    + '<p class="section-lead">Todas las parejas inscritas juegan primero una fase de liga —todas contra todas—. Con la liga terminada, se pasa a los cuadros eliminatorios. El número de jornadas y el tamaño del cuadro dependen de cuántas parejas se apunten.</p>'
+    + '<p class="eyebrow">Formato</p>'
     + '<div class="formato-steps">'
     +   '<div class="formato-card"><div class="step-num">FASE 1</div><h3>Liga</h3><p>Todas las parejas confirmadas se enfrentan entre sí una vez. Los puntos de cada partido dependen del resultado — mira la tabla de puntuación aquí abajo.</p></div>'
     +   '<div class="formato-card"><div class="step-num">FASE 2</div><h3>Cuadros</h3><p>Eliminación directa hasta la final. La composición del cuadro se publicará en cuanto termine la liga.</p></div>'
@@ -502,10 +499,14 @@ function renderOrgCuadrosTab(){
 
 function renderOrgFaqTab(){
   var rows = STATE.faqs.map(function(f){
+    var confirming = ui.faqDeleteConfirm === f.id;
+    var deleteBtn = confirming
+      ? '<button class="btn btn-danger btn-sm" data-action="confirm-delete-faq" data-id="'+f.id+'" type="button">¿Seguro? Sí, eliminar</button><button class="btn btn-ghost btn-sm" data-action="cancel-delete-faq" type="button">Cancelar</button>'
+      : '<button class="btn btn-danger btn-sm" data-action="delete-faq" data-id="'+f.id+'" type="button">Eliminar</button>';
     return '<div class="org-row faq-edit-row">'
       + '<input id="faq-q-'+f.id+'" type="text" value="'+escHtml(f.q)+'" placeholder="Pregunta">'
       + '<textarea id="faq-a-'+f.id+'" placeholder="Respuesta">'+escHtml(f.a)+'</textarea>'
-      + '<span class="row-actions"><button class="btn btn-primary btn-sm" data-action="save-faq" data-id="'+f.id+'" type="button">Guardar</button><button class="btn btn-danger btn-sm" data-action="delete-faq" data-id="'+f.id+'" type="button">Eliminar</button></span>'
+      + '<span class="row-actions"><button class="btn btn-primary btn-sm" data-action="save-faq" data-id="'+f.id+'" type="button">Guardar</button>'+deleteBtn+'</span>'
       + '</div>';
   }).join("");
   return '<div>' + (rows ? '<div class="org-list">'+rows+'</div>' : '<p style="color:var(--ink-faint);font-size:.9rem;">No hay preguntas todavía.</p>')
@@ -530,8 +531,6 @@ function mount(){
     var input = document.getElementById("login-password-input");
     if (input) input.focus();
   }
-  setupCtaObserver();
-  updateMobileCta();
   updateBackToTop();
 }
 
@@ -576,8 +575,8 @@ function wireInscripcionForm(){
 
 /* ---------- actions ---------- */
 function openOrganizer(){ ui.modalOpen = true; ui.loginError = false; mount(); }
-function closeOrganizer(){ ui.modalOpen = false; mount(); }
-function relock(){ signOut(auth); ui.modalOpen = false; mount(); }
+function closeOrganizer(){ ui.modalOpen = false; ui.faqDeleteConfirm = null; mount(); }
+function relock(){ signOut(auth); ui.modalOpen = false; ui.faqDeleteConfirm = null; mount(); }
 function tryLogin(){
   var val = valOf("login-password-input");
   var btn = document.querySelector('[data-action="try-login"]');
@@ -588,7 +587,7 @@ function tryLogin(){
     ui.loginError = true;
   }).finally(function(){ mount(); });
 }
-function setTab(tab){ ui.tab = tab; mount(); }
+function setTab(tab){ ui.tab = tab; ui.faqDeleteConfirm = null; mount(); }
 function toggleMobileMenu(){ ui.mobileMenuOpen = !ui.mobileMenuOpen; mount(); }
 function closeMobileMenu(){ ui.mobileMenuOpen = false; mount(); }
 function toggleFaq(id){ ui.openFaq = (ui.openFaq === id ? null : id); mount(); }
@@ -700,8 +699,10 @@ function saveFaq(id){
   f.q = q; f.a = a;
   saveStateDoc("faqs", { list: STATE.faqs });
 }
+function askDeleteFaq(id){ ui.faqDeleteConfirm = id; mount(); }
+function cancelDeleteFaq(){ ui.faqDeleteConfirm = null; mount(); }
 function deleteFaq(id){
-  if (!confirm("¿Eliminar esta pregunta?")) return;
+  ui.faqDeleteConfirm = null;
   STATE.faqs = STATE.faqs.filter(function(f){ return f.id!==id; });
   saveStateDoc("faqs", { list: STATE.faqs });
 }
@@ -767,7 +768,9 @@ document.addEventListener("click", function(e){
     case "toggle-faq": toggleFaq(id); break;
     case "add-faq": addFaq(); break;
     case "save-faq": saveFaq(id); break;
-    case "delete-faq": deleteFaq(id); break;
+    case "delete-faq": askDeleteFaq(id); break;
+    case "confirm-delete-faq": deleteFaq(id); break;
+    case "cancel-delete-faq": cancelDeleteFaq(); break;
   }
 });
 document.addEventListener("keydown", function(e){
@@ -830,28 +833,6 @@ if (backToTopBtn){
     window.scrollTo({ top:0, behavior:"smooth" });
   });
 }
-
-/* ---------- mobile sticky cta ---------- */
-var mobileCtaBar = document.getElementById("mobile-cta-bar");
-var inscripcionInView = false;
-var ctaObserver = null;
-function updateMobileCta(){
-  if (!mobileCtaBar) return;
-  var show = window.scrollY > 420 && !inscripcionInView && !ui.modalOpen;
-  mobileCtaBar.classList.toggle("visible", show);
-}
-function setupCtaObserver(){
-  if (!window.IntersectionObserver) return;
-  if (ctaObserver) ctaObserver.disconnect();
-  var target = document.getElementById("inscripcion");
-  if (!target) return;
-  ctaObserver = new IntersectionObserver(function(entries){
-    entries.forEach(function(e){ inscripcionInView = e.isIntersecting; });
-    updateMobileCta();
-  }, { threshold: 0.2 });
-  ctaObserver.observe(target);
-}
-if (mobileCtaBar) window.addEventListener("scroll", updateMobileCta, { passive:true });
 
 mount();
 </script>
