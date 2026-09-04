@@ -30,11 +30,6 @@
 <body>
 <div id="app"></div>
 <button id="back-to-top" class="back-to-top" type="button" aria-label="Volver arriba">↑</button>
-<div id="cursor-ball" aria-hidden="true"><div class="cursor-ball-inner"><svg viewBox="0 0 200 200" focusable="false">
-  <circle cx="100" cy="100" r="94" fill="var(--color-khaki)" stroke="var(--color-dark-olive)" stroke-width="4"/>
-  <path d="M100,6 C158,18 160,92 118,100 C76,108 78,182 100,194" fill="none" stroke="var(--color-beige)" stroke-width="9" stroke-linecap="round"/>
-  <path d="M100,6 C158,18 160,92 118,100 C76,108 78,182 100,194" fill="none" stroke="var(--color-dark-olive)" stroke-width="1.5" stroke-linecap="round" opacity=".35"/>
-</svg></div></div>
 <div id="cursor-dot" aria-hidden="true"></div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -228,16 +223,6 @@ function renderHeader(){
     + '</div>'
     + (ui.mobileMenuOpen ? '<nav class="mobile-nav-panel open">' + NAV_LINKS.map(function(l){ return '<a href="'+l[0]+'" data-action="close-mobile-menu">'+l[1]+'</a>'; }).join("") + '</nav>' : '')
     + '</header>';
-}
-/* padel-ball motif, drawn with the site's own palette (khaki body, beige seam) so it
-   reads as "our" ball rather than a generic yellow tennis ball. Used as the translucent
-   ball that appears next to the custom cursor on hover — see #cursor-ball / cursor JS. */
-function ballIcon(){
-  return '<svg viewBox="0 0 200 200" aria-hidden="true" focusable="false">'
-    + '<circle cx="100" cy="100" r="94" fill="var(--color-khaki)" stroke="var(--color-dark-olive)" stroke-width="4"/>'
-    + '<path d="M100,6 C158,18 160,92 118,100 C76,108 78,182 100,194" fill="none" stroke="var(--color-beige)" stroke-width="9" stroke-linecap="round"/>'
-    + '<path d="M100,6 C158,18 160,92 118,100 C76,108 78,182 100,194" fill="none" stroke="var(--color-dark-olive)" stroke-width="1.5" stroke-linecap="round" opacity=".35"/>'
-    + '</svg>';
 }
 function renderHero(){
   var animCls = heroAnimatedOnce ? "" : " hero-animate";
@@ -756,28 +741,19 @@ document.addEventListener("pointerleave", fxTiltLeave, true);
    immediately obvious, unlike the scroll effects), while the "clickable" state is
    delegated so it keeps working after every mount() re-render without rebinding. */
 var cursorDotEl = document.getElementById("cursor-dot");
-var cursorBallEl = document.getElementById("cursor-ball");
 var CURSOR_CLICKABLE = "a, button, input, select, textarea, label";
-if (cursorDotEl && cursorBallEl){
+if (cursorDotEl){
   document.addEventListener("pointermove", function(e){
     if (e.pointerType && e.pointerType !== "mouse") return;
-    var t = "translate(" + e.clientX + "px," + e.clientY + "px)";
-    cursorDotEl.style.transform = t;
-    cursorBallEl.style.transform = t;
+    cursorDotEl.style.transform = "translate(" + e.clientX + "px," + e.clientY + "px)";
   });
   document.addEventListener("pointerover", function(e){
-    if (e.target.closest && e.target.closest(CURSOR_CLICKABLE)){
-      cursorDotEl.classList.add("is-active");
-      cursorBallEl.classList.add("is-active");
-    }
+    if (e.target.closest && e.target.closest(CURSOR_CLICKABLE)) cursorDotEl.classList.add("is-active");
   });
   document.addEventListener("pointerout", function(e){
     var leavingClickable = e.target.closest && e.target.closest(CURSOR_CLICKABLE);
     var enteringClickable = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(CURSOR_CLICKABLE);
-    if (leavingClickable && !enteringClickable){
-      cursorDotEl.classList.remove("is-active");
-      cursorBallEl.classList.remove("is-active");
-    }
+    if (leavingClickable && !enteringClickable) cursorDotEl.classList.remove("is-active");
   });
 }
 
