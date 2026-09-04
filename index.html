@@ -760,17 +760,19 @@ if (cursorDotEl){
 }
 
 /* ============================================================
-   Hero cursor-interactive dots — canvas overlay on top of the CSS halftone pattern.
-   Dots within HERO_DOT_HOVER_R of the cursor swell up, sampled on the fly and
-   phase-locked to the CSS layer's own (still auto-drifting) background-position so the
-   bigger dots look like the same dots growing, not new ones appearing on top. A wide
-   radius + gentle falloff + soft-followed cursor position + low opacity keep the growth
-   reading as a smooth, spread-out swell rather than dots fusing into a solid blob.
-   The hero/canvas nodes are recreated on every mount() (they live inside #app), so
-   heroDotsSetup() re-grabs them each time; only the rAF loop itself is started once. */
-var heroDots = { canvas:null, ctx:null, heroEl:null, w:0, h:0, dpr:1, mouseX:-9999, mouseY:-9999, smoothX:-9999, smoothY:-9999, inHero:false, raf:null };
+   Hero halftone dots — a single canvas-drawn grid, not a CSS background layer plus a
+   reactive overlay: the exact same dots that auto-drift also swell near the cursor, so
+   nothing "new" appears, the existing ones just grow. Drift speed matches the old CSS
+   haloDrift (160px every 16s, diagonally) and never stops; the swell is a large, very
+   gently-falling-off radius on top of that, and the whole interactive effect itself
+   fades in/out smoothly as the cursor enters/leaves the hero (heroDots.activeT) so nothing
+   pops at the boundary either. The hero/canvas nodes are recreated on every mount() (they
+   live inside #app), so heroDotsSetup() re-grabs them each time; only the rAF loop itself
+   is started once, and its own timestamp drives the drift (frame-rate independent). */
+var heroDots = { canvas:null, ctx:null, heroEl:null, w:0, h:0, dpr:1, mouseX:-9999, mouseY:-9999, smoothX:-9999, smoothY:-9999, inHero:false, activeT:0, driftX:0, driftY:0, lastT:null, raf:null };
 var HERO_DOT_SPACING = 16;
-var HERO_DOT_HOVER_R = 150;
+var HERO_DOT_DRIFT_SPEED = 0.01; /* px/ms, each axis — 160px every 16000ms, same as the old CSS animation */
+var HERO_DOT_HOVER_R = 260;
 
 function heroDotsSetup(){
   var hero = document.querySelector(".hero");
@@ -805,34 +807,43 @@ function heroDotsResize(force){
   heroDots.ctx.setTransform(heroDots.dpr, 0, 0, heroDots.dpr, 0, 0);
 }
 
-function heroDotsDraw(){
+function heroDotsDraw(now){
   var ctx = heroDots.ctx;
   if (!ctx) return;
+
+  if (heroDots.lastT == null) heroDots.lastT = now;
+  var dt = Math.min(now - heroDots.lastT, 100); /* clamp so a dropped/backgrounded frame can't jump the drift */
+  heroDots.lastT = now;
+  heroDots.driftX += dt * HERO_DOT_DRIFT_SPEED;
+  heroDots.driftY += dt * HERO_DOT_DRIFT_SPEED;
+
+  heroDots.activeT += ((heroDots.inHero ? 1 : 0) - heroDots.activeT) * 0.045;
+  if (heroDots.activeT > 0.01){
+    if (heroDots.smoothX < -900){ heroDots.smoothX = heroDots.mouseX; heroDots.smoothY = heroDots.mouseY; }
+    heroDots.smoothX += (heroDots.mouseX - heroDots.smoothX) * 0.08;
+    heroDots.smoothY += (heroDots.mouseY - heroDots.smoothY) * 0.08;
+  }
+
   ctx.clearRect(0, 0, heroDots.w, heroDots.h);
-  if (!heroDots.inHero) return;
-
-  /* soft-follow: the swell trails the actual cursor slightly instead of snapping to it
-     every frame, which is what reads as fluid rather than mechanical */
-  if (heroDots.smoothX < -900){ heroDots.smoothX = heroDots.mouseX; heroDots.smoothY = heroDots.mouseY; }
-  heroDots.smoothX += (heroDots.mouseX - heroDots.smoothX) * 0.1;
-  heroDots.smoothY += (heroDots.mouseY - heroDots.smoothY) * 0.1;
+  var phaseX = ((heroDots.driftX % HERO_DOT_SPACING) + HERO_DOT_SPACING) % HERO_DOT_SPACING;
+  var phaseY = ((heroDots.driftY % HERO_DOT_SPACING) + HERO_DOT_SPACING) % HERO_DOT_SPACING;
+  var active = heroDots.activeT > 0.01;
   var mx = heroDots.smoothX, my = heroDots.smoothY;
-
-  var bgPos = getComputedStyle(heroDots.heroEl).backgroundPosition.split(",")[0].trim().split(/\s+/);
-  var phaseX = ((parseFloat(bgPos[0]) || 0) % HERO_DOT_SPACING + HERO_DOT_SPACING) % HERO_DOT_SPACING;
-  var phaseY = ((parseFloat(bgPos[1]) || 0) % HERO_DOT_SPACING + HERO_DOT_SPACING) % HERO_DOT_SPACING;
-  var startX = Math.floor((mx - HERO_DOT_HOVER_R - phaseX) / HERO_DOT_SPACING) * HERO_DOT_SPACING + phaseX;
-  var startY = Math.floor((my - HERO_DOT_HOVER_R - phaseY) / HERO_DOT_SPACING) * HERO_DOT_SPACING + phaseY;
-  ctx.fillStyle = "rgba(232,225,204,.5)";
-  for (var y = startY; y <= my + HERO_DOT_HOVER_R; y += HERO_DOT_SPACING){
-    for (var x = startX; x <= mx + HERO_DOT_HOVER_R; x += HERO_DOT_SPACING){
-      var d = Math.hypot(x - mx, y - my);
-      if (d > HERO_DOT_HOVER_R) continue;
-      /* plain smoothstep — no extra bias — so the size increase is spread gently across
-         the whole radius instead of concentrated (and visually fused) near the centre */
-      var t = 1 - d / HERO_DOT_HOVER_R;
-      t = t * t * (3 - 2 * t);
-      var r = 1.5 + t * 1.8;
+  ctx.fillStyle = "rgba(188,189,139,.55)";
+  for (var y = phaseY - HERO_DOT_SPACING; y < heroDots.h + HERO_DOT_SPACING; y += HERO_DOT_SPACING){
+    for (var x = phaseX - HERO_DOT_SPACING; x < heroDots.w + HERO_DOT_SPACING; x += HERO_DOT_SPACING){
+      var r = 1.6;
+      if (active){
+        var d = Math.hypot(x - mx, y - my);
+        if (d < HERO_DOT_HOVER_R){
+          /* smoothstep — a soft, gradual rise with no hard edge at the boundary, spread
+             across a wide radius so growth between neighbouring dots is barely
+             distinguishable frame to frame */
+          var t = 1 - d / HERO_DOT_HOVER_R;
+          t = t * t * (3 - 2 * t);
+          r = 1.6 + t * 5.2 * heroDots.activeT;
+        }
+      }
       ctx.beginPath();
       ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fill();
@@ -840,14 +851,16 @@ function heroDotsDraw(){
   }
 }
 
-function heroDotsLoop(){
+function heroDotsLoop(now){
+  /* no document.hidden gate here on purpose: the browser's own rAF scheduler already
+     throttles background tabs for us, and gating on it ourselves risks the dots never
+     drawing at all in a context where hidden reads true for reasons that have nothing to
+     do with battery saving — since there's no CSS fallback layer any more, that would
+     mean an empty hero background, which is worse than the CPU this loop actually costs. */
   heroDotsResize();
-  heroDotsDraw();
-  heroDots.raf = document.hidden ? null : requestAnimationFrame(heroDotsLoop);
+  heroDotsDraw(now);
+  heroDots.raf = requestAnimationFrame(heroDotsLoop);
 }
-document.addEventListener("visibilitychange", function(){
-  if (!document.hidden && heroDots.canvas && !heroDots.raf) heroDots.raf = requestAnimationFrame(heroDotsLoop);
-});
 document.addEventListener("pointermove", function(e){
   if (e.pointerType && e.pointerType !== "mouse") return;
   if (!heroDots.heroEl) return;

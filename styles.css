@@ -139,19 +139,13 @@ input,textarea,select{font:inherit;color:inherit;}
    (the dot) without ever landing on a same-color background */
 .hero{position:relative;color:var(--color-white);overflow:hidden;padding:4.5rem 0 4rem;margin:20px 20px 0;border-radius:var(--radius-cards);
   min-height:calc(100vh - 320px);display:flex;flex-direction:column;justify-content:center;
-  background-image:radial-gradient(rgba(188,189,139,.55) 1.6px, transparent 1.7px), linear-gradient(135deg, var(--color-terracotta) 0%, var(--color-dark-olive) 100%);
-  background-size:16px 16px, 100% 100%;
-  animation:haloDrift 16s linear infinite;
+  background-image:linear-gradient(135deg, var(--color-terracotta) 0%, var(--color-dark-olive) 100%);
   transform:scale(calc(1 - var(--hero-p) * 0.045 * var(--hero-amp)));transform-origin:center 38%;will-change:transform;
 }
-/* the halftone dot layer slowly drifts — moving by an exact multiple of its own 16px tile
-   size loops seamlessly, giving the hero a subtle living texture */
-@keyframes haloDrift{ from{background-position:0 0, 0 0;} to{background-position:160px 160px, 0 0;} }
-/* cursor-interactive dot layer, drawn in canvas on top of the CSS pattern above: dots
-   near the pointer swell up, and dots inside the ghost "8"'s silhouette gather into the
-   numeral itself. See heroDots* in JS. Canvas-drawn (not more DOM nodes) so hundreds of
-   dots cost nothing when idle — an empty clearRect — and only a small neighbourhood
-   around the cursor is ever computed, never the whole grid. */
+/* the halftone dots live entirely in canvas now (see heroDots* in JS) instead of a CSS
+   background pattern: they still auto-drift exactly as before, but the SAME dots that
+   are drifting also swell near the cursor — one set of dots, not a static layer plus a
+   separate reactive one drawn on top of it. */
 .hero-dots-canvas{position:absolute;inset:0;pointer-events:none;z-index:0;}
 .hero-inner{max-width:1080px;margin:0 auto;padding:0 1.5rem;position:relative;z-index:2;
   transform:translateY(calc(var(--hero-p) * -34px * var(--hero-amp)));opacity:calc(1 - var(--hero-p) * 0.6);will-change:transform,opacity;}
