@@ -344,10 +344,16 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
   .header-logo .brand-sub{display:none;}
   .header-lock span.lock-label{display:none;}
   .hero{margin:14px 14px 0;}
+  .hero-num{top:-1.2rem;right:-1.2rem;font-size:min(58vw,46vh);}
   .insc-actions{flex-direction:column;align-items:stretch;}
   .match-row{grid-template-columns:1fr;text-align:left;gap:.2rem;}
   .match-row .vs{display:none;}
   .match-edit-row{grid-template-columns:1fr 1fr;}
+  /* cuadros as full-width slides — one round per "page", swipe to move between them,
+     instead of the desktop peek-next-column layout which cuts the last round in half
+     on a narrow screen */
+  .bracket{gap:0;scroll-snap-type:x mandatory;}
+  .bracket-round{flex:0 0 100%;min-width:100%;scroll-snap-align:center;padding:0 .1rem;}
 }
 /* ---------- app-specific additions ---------- */
 .status-banner{background:var(--signal-tint);color:var(--signal);border-radius:var(--radius-medium);padding:.8rem 1.1rem;font-size:.85rem;margin-top:1.6rem;}
