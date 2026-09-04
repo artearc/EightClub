@@ -56,6 +56,15 @@
   --neu-pressed-sm:inset 3px 3px 7px var(--neu-dark),inset -3px -3px 7px var(--neu-light);
   --neu-raised-on-dark:9px 9px 20px var(--neu-dark-on-dark),-9px -9px 20px var(--neu-light-on-dark);
   --neu-pressed-on-dark:inset 5px 5px 12px var(--neu-dark-on-dark),inset -5px -5px 12px var(--neu-light-on-dark);
+
+  /* liquid glass — reserved for the two spots that actually have something worth
+     blurring behind them (the header once content is scrolling underneath it, and the
+     hero buttons over its gradient+dot texture): a blurred/saturated see-through fill,
+     a bright thin rim to catch the "edge of glass", and a soft diagonal gloss streak
+     layered into the background so it reads as curved glass, not just tinted plastic. */
+  --glass-blur:blur(18px) saturate(180%);
+  --glass-sheen:linear-gradient(120deg, rgba(255,255,255,.4) 0%, rgba(255,255,255,0) 38%);
+  --glass-border:rgba(255,255,255,.4);
   --font-display:'Anton','Bebas Neue',Impact,sans-serif;
   --font-body:'DM Sans',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   --font-mono:var(--font-body);
@@ -87,8 +96,13 @@ input,textarea,select{font:inherit;color:inherit;}
 
 /* header */
 .site-header{position:sticky;top:0;z-index:40;padding:.9rem 0;background:transparent;}
-.header-inner{max-width:1040px;margin:0 auto;padding:.65rem 1.4rem;display:flex;align-items:center;gap:1.5rem;background:transparent;border-radius:var(--radius-pill);transition:background .3s var(--ease-out);}
-.site-header.is-scrolled .header-inner{background:var(--header-bg);}
+.header-inner{max-width:1040px;margin:0 auto;padding:.65rem 1.4rem;display:flex;align-items:center;gap:1.5rem;background:transparent;border-radius:var(--radius-pill);border:1px solid transparent;transition:background .3s var(--ease-out),border-color .3s var(--ease-out),box-shadow .3s var(--ease-out);}
+.site-header.is-scrolled .header-inner{
+  background:var(--glass-sheen),color-mix(in srgb, var(--header-bg) 60%, transparent);
+  -webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);
+  border-color:var(--glass-border);
+  box-shadow:0 10px 30px rgba(55,61,32,.14),inset 0 1px 0 rgba(255,255,255,.5);
+}
 .header-logo{display:flex;align-items:baseline;gap:.32rem;flex-shrink:0;}
 .brand-mark{font-family:var(--font-display);font-weight:400;color:var(--header-ink);letter-spacing:.02em;display:inline-flex;align-items:baseline;}
 .brand-mark .dot{color:var(--signal);}
@@ -138,11 +152,12 @@ input,textarea,select{font:inherit;color:inherit;}
 .hero-subtitle{font-family:var(--font-body);font-size:clamp(1.05rem,2.4vw,1.3rem);color:var(--color-white);margin-top:.9rem;font-weight:500;}
 .hero-text{max-width:56ch;color:rgba(255,255,255,.82);font-size:1.06rem;margin-top:1.4rem;}
 .hero-actions{display:flex;align-items:center;gap:.9rem;flex-wrap:wrap;margin-top:2.1rem;}
-.hero-actions .btn-primary{box-shadow:var(--neu-raised-on-dark);}
-.hero-actions .btn-primary:active{box-shadow:var(--neu-pressed-on-dark);}
-.hero-actions .btn-ghost{color:var(--color-white);background:rgba(255,255,255,.06);box-shadow:var(--neu-raised-on-dark);}
+.hero-actions .btn-primary,.hero-actions .btn-ghost{-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);border:1px solid var(--glass-border);}
+.hero-actions .btn-primary{background:var(--glass-sheen),linear-gradient(135deg, color-mix(in srgb, var(--signal) 62%, transparent), color-mix(in srgb, var(--signal) 34%, transparent));box-shadow:0 10px 26px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.45),inset 0 -1px 0 rgba(0,0,0,.12);}
+.hero-actions .btn-primary:active{box-shadow:0 4px 14px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.3);}
+.hero-actions .btn-ghost{color:var(--color-white);background:var(--glass-sheen),rgba(255,255,255,.12);box-shadow:0 10px 26px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.35);}
 .hero-actions .btn-ghost:hover{color:var(--color-khaki);}
-.hero-actions .btn-ghost:active{box-shadow:var(--neu-pressed-on-dark);}
+.hero-actions .btn-ghost:active{box-shadow:0 4px 14px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.25);}
 .hero-next{margin-top:2.6rem;font-size:.85rem;color:rgba(255,255,255,.78);border-top:1px solid rgba(255,255,255,.24);padding-top:1.1rem;max-width:56ch;}
 .hero-next strong{color:var(--color-white);}
 
