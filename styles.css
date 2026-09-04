@@ -66,6 +66,11 @@ input,textarea,select{font:inherit;color:inherit;}
 .section--alt{background:var(--bg-alt);}
 .section-inner{max-width:1080px;margin:0 auto;padding:0 1.5rem;position:relative;z-index:1;}
 
+/* editorial ghost-number marks — same big-translucent-numeral language as the hero's
+   "8", reused as a running index (01, 02…) behind each section's heading so the page
+   reads as one designed sequence instead of a stack of identical generic blocks */
+.section-mark{position:absolute;left:1.5rem;top:-.6rem;z-index:-1;font-family:var(--font-display);font-weight:400;font-size:clamp(4rem,11vw,8.5rem);line-height:1;color:var(--ink);opacity:.055;letter-spacing:0;user-select:none;pointer-events:none;}
+
 
 /* header */
 .site-header{position:sticky;top:0;z-index:40;padding:.9rem 0;background:transparent;}
@@ -82,6 +87,8 @@ input,textarea,select{font:inherit;color:inherit;}
 .header-nav a::after{content:"";position:absolute;left:0;right:100%;bottom:-1px;height:2px;background:var(--signal);transition:right .28s var(--ease-out);}
 .header-nav a:hover{color:var(--header-ink);}
 .header-nav a:hover::after{right:0;}
+.header-nav a.active{color:var(--header-ink);}
+.header-nav a.active::after{right:0;}
 .header-lock{margin-left:auto;flex-shrink:0;display:flex;align-items:center;gap:.5rem;color:var(--header-ink-soft);font-family:var(--font-body);font-size:.74rem;font-weight:500;letter-spacing:.06em;text-transform:uppercase;background:transparent;border:1px solid rgba(55,61,32,.18);border-radius:var(--radius-pill);padding:.4rem .9rem .4rem .7rem;cursor:pointer;transition:border-color .15s,color .15s;}
 .header-lock:hover{border-color:var(--signal);color:var(--header-ink);}
 .header-lock .dot{width:6px;height:6px;border-radius:50%;background:var(--signal);flex-shrink:0;}
@@ -159,8 +166,7 @@ input,textarea,select{font:inherit;color:inherit;}
 
 /* formato */
 .formato-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1.2rem;margin-top:2rem;}
-.formato-card{background:var(--bg-elevated);border-radius:var(--radius-cards);padding:1.8rem;transition:transform .25s var(--ease-out);}
-.formato-card:hover{transform:translateY(-4px);}
+.formato-card{background:var(--bg-elevated);border-radius:var(--radius-cards);padding:1.8rem;}
 .formato-card .step-num{font-family:var(--font-display);color:var(--signal);font-weight:400;font-size:1rem;letter-spacing:.08em;margin-bottom:.5rem;}
 .formato-card h3{font-size:1.7rem;margin-bottom:.5rem;}
 .formato-card p{color:var(--ink-soft);font-size:.95rem;}
@@ -311,8 +317,7 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 
 /* rules (formato) */
 .rules-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.2rem;margin-top:1.8rem;}
-.rule-card{background:var(--bg-elevated);border-radius:var(--radius-cards);padding:1.7rem 1.8rem;transition:transform .25s var(--ease-out);}
-.rule-card:hover{transform:translateY(-4px);}
+.rule-card{background:var(--bg-elevated);border-radius:var(--radius-cards);padding:1.7rem 1.8rem;}
 .rule-card h3{font-size:1.7rem;margin-bottom:1rem;}
 .rule-list{display:flex;flex-direction:column;gap:.65rem;font-size:.92rem;color:var(--ink-soft);list-style:none;padding:0;margin:0;}
 .rule-list li{display:flex;justify-content:space-between;align-items:center;gap:.6rem;}
@@ -371,4 +376,20 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
    forwards and backwards alike) ---------- */
 .fx-reveal{opacity:0;will-change:transform,opacity;}
 .fx-parallax{will-change:transform;}
+
+/* film-grain overlay — the flat beige/olive canvas otherwise reads as a solid vector
+   fill; this adds a near-invisible paper-like texture across the whole page so surfaces
+   feel tactile rather than flat. Fixed + pointer-events:none so it never affects layout
+   or interaction, just sits on top of everything as a light multiply. */
+body::after{
+  content:"";
+  position:fixed;
+  inset:0;
+  z-index:500;
+  pointer-events:none;
+  opacity:.05;
+  mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:180px 180px;
+}
 
