@@ -153,9 +153,9 @@ input,textarea,select{font:inherit;color:inherit;}
    CSS-transitioned smoothly on hover without also smoothing --hero-p — that one is
    JS-driven every scroll frame and must stay lag-free, so it's deliberately left out of
    the transition list below. */
-.hero-num{position:absolute;right:-2vw;top:50%;font-family:var(--font-display);font-weight:400;font-size:min(60vw,84vh);line-height:1;color:var(--color-white);opacity:.14;z-index:1;pointer-events:none;user-select:none;
+.hero-num{position:absolute;right:-1.5rem;top:-3.5rem;font-family:var(--font-display);font-weight:400;font-size:min(60vw,84vh);line-height:1;color:var(--color-white);opacity:.14;z-index:1;pointer-events:none;user-select:none;
   transition:--hero-num-hot .6s var(--ease-out);
-  transform:translateY(-50%) translateY(calc(var(--hero-p) * -80px * var(--hero-amp))) scale(calc((1 + var(--hero-p) * 0.24 * var(--hero-amp)) * (1 + var(--hero-num-hot) * 0.16))) rotate(calc(var(--hero-p) * 5deg * var(--hero-amp)));will-change:transform;}
+  transform:translateY(calc(var(--hero-p) * -80px * var(--hero-amp))) scale(calc((1 + var(--hero-p) * 0.24 * var(--hero-amp)) * (1 + var(--hero-num-hot) * 0.16))) rotate(calc(var(--hero-p) * 5deg * var(--hero-amp)));will-change:transform;}
 .hero-num.is-hot{--hero-num-hot:1;}
 .hero-court{display:none;}
 .hero-eyebrow{font-family:var(--font-body);text-transform:uppercase;letter-spacing:.14em;font-size:.78rem;color:rgba(255,255,255,.85);font-weight:500;margin-bottom:1rem;}

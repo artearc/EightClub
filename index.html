@@ -769,7 +769,7 @@ if (cursorDotEl){
    pops at the boundary either. The hero/canvas nodes are recreated on every mount() (they
    live inside #app), so heroDotsSetup() re-grabs them each time; only the rAF loop itself
    is started once, and its own timestamp drives the drift (frame-rate independent). */
-var heroDots = { canvas:null, ctx:null, heroEl:null, numEl:null, w:0, h:0, dpr:1, mouseX:-9999, mouseY:-9999, smoothX:-9999, smoothY:-9999, inHero:false, activeT:0, numDimT:0, driftX:0, driftY:0, lastT:null, raf:null };
+var heroDots = { canvas:null, ctx:null, heroEl:null, w:0, h:0, dpr:1, mouseX:-9999, mouseY:-9999, smoothX:-9999, smoothY:-9999, inHero:false, activeT:0, driftX:0, driftY:0, lastT:null, raf:null };
 var HERO_DOT_SPACING = 16;
 var HERO_DOT_DRIFT_SPEED = 0.01; /* px/ms, each axis — 160px every 16000ms, same as the old CSS animation */
 var HERO_DOT_HOVER_R = 260;
@@ -782,7 +782,6 @@ function heroDotsSetup(){
   var isNewCanvas = canvas !== heroDots.canvas;
   heroDots.heroEl = hero;
   heroDots.canvas = canvas;
-  heroDots.numEl = hero.querySelector(".hero-num");
   heroDots.ctx = canvas.getContext("2d");
   /* mount() replaces the hero/canvas DOM nodes on every re-render; a brand-new canvas
      always needs its backing buffer (re)sized even if its CSS dimensions happen to
@@ -825,26 +824,12 @@ function heroDotsDraw(now){
     heroDots.smoothY += (heroDots.mouseY - heroDots.smoothY) * 0.08;
   }
 
-  /* dim the dots sitting behind the ghost "8" while it's hovered, so it reads as a
-     silhouette cut into the texture rather than just another shape drawn over it */
-  var numRect = null;
-  if (heroDots.heroEl && heroDots.numEl){
-    var hr = heroDots.heroEl.getBoundingClientRect();
-    var nr = heroDots.numEl.getBoundingClientRect();
-    numRect = { x: nr.left - hr.left, y: nr.top - hr.top, w: nr.width, h: nr.height };
-  }
-  var numHot = !!(numRect && heroDots.inHero && heroDots.mouseX >= numRect.x - 24 && heroDots.mouseX <= numRect.x + numRect.w + 24 && heroDots.mouseY >= numRect.y - 24 && heroDots.mouseY <= numRect.y + numRect.h + 24);
-  heroDots.numDimT += ((numHot ? 1 : 0) - heroDots.numDimT) * 0.07;
-
   ctx.clearRect(0, 0, heroDots.w, heroDots.h);
   var phaseX = ((heroDots.driftX % HERO_DOT_SPACING) + HERO_DOT_SPACING) % HERO_DOT_SPACING;
   var phaseY = ((heroDots.driftY % HERO_DOT_SPACING) + HERO_DOT_SPACING) % HERO_DOT_SPACING;
   var active = heroDots.activeT > 0.01;
-  var dimming = numRect && heroDots.numDimT > 0.01;
   var mx = heroDots.smoothX, my = heroDots.smoothY;
-  var baseFill = "rgba(188,189,139,.55)";
-  var dimFill = "rgba(188,189,139," + (0.55 * (1 - heroDots.numDimT * 0.72)).toFixed(3) + ")";
-  ctx.fillStyle = baseFill;
+  ctx.fillStyle = "rgba(188,189,139,.55)";
   for (var y = phaseY - HERO_DOT_SPACING; y < heroDots.h + HERO_DOT_SPACING; y += HERO_DOT_SPACING){
     for (var x = phaseX - HERO_DOT_SPACING; x < heroDots.w + HERO_DOT_SPACING; x += HERO_DOT_SPACING){
       var r = 1.6;
@@ -859,17 +844,9 @@ function heroDotsDraw(now){
           r = 1.6 + t * 5.2 * heroDots.activeT;
         }
       }
-      if (dimming && x >= numRect.x && x <= numRect.x + numRect.w && y >= numRect.y && y <= numRect.y + numRect.h){
-        ctx.fillStyle = dimFill;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = baseFill;
-      } else {
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 }
