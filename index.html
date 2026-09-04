@@ -30,6 +30,12 @@
 <body>
 <div id="app"></div>
 <button id="back-to-top" class="back-to-top" type="button" aria-label="Volver arriba">↑</button>
+<div id="cursor-ball" aria-hidden="true"><div class="cursor-ball-inner"><svg viewBox="0 0 200 200" focusable="false">
+  <circle cx="100" cy="100" r="94" fill="var(--color-khaki)" stroke="var(--color-dark-olive)" stroke-width="4"/>
+  <path d="M100,6 C158,18 160,92 118,100 C76,108 78,182 100,194" fill="none" stroke="var(--color-beige)" stroke-width="9" stroke-linecap="round"/>
+  <path d="M100,6 C158,18 160,92 118,100 C76,108 78,182 100,194" fill="none" stroke="var(--color-dark-olive)" stroke-width="1.5" stroke-linecap="round" opacity=".35"/>
+</svg></div></div>
+<div id="cursor-dot" aria-hidden="true"></div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -223,6 +229,16 @@ function renderHeader(){
     + (ui.mobileMenuOpen ? '<nav class="mobile-nav-panel open">' + NAV_LINKS.map(function(l){ return '<a href="'+l[0]+'" data-action="close-mobile-menu">'+l[1]+'</a>'; }).join("") + '</nav>' : '')
     + '</header>';
 }
+/* padel-ball motif, drawn with the site's own palette (khaki body, beige seam) so it
+   reads as "our" ball rather than a generic yellow tennis ball. Used as the translucent
+   ball that appears next to the custom cursor on hover — see #cursor-ball / cursor JS. */
+function ballIcon(){
+  return '<svg viewBox="0 0 200 200" aria-hidden="true" focusable="false">'
+    + '<circle cx="100" cy="100" r="94" fill="var(--color-khaki)" stroke="var(--color-dark-olive)" stroke-width="4"/>'
+    + '<path d="M100,6 C158,18 160,92 118,100 C76,108 78,182 100,194" fill="none" stroke="var(--color-beige)" stroke-width="9" stroke-linecap="round"/>'
+    + '<path d="M100,6 C158,18 160,92 118,100 C76,108 78,182 100,194" fill="none" stroke="var(--color-dark-olive)" stroke-width="1.5" stroke-linecap="round" opacity=".35"/>'
+    + '</svg>';
+}
 function renderHero(){
   var animCls = heroAnimatedOnce ? "" : " hero-animate";
   heroAnimatedOnce = true;
@@ -258,6 +274,7 @@ function statTile(label, value, speed){
 
 function renderFormato(){
   return '<section id="formato" class="section"><div class="section-inner">'
+    + '<span class="section-mark" aria-hidden="true">01</span>'
     + '<p class="eyebrow">Formato</p>'
     + '<div class="formato-steps">'
     +   '<div class="formato-card fx-reveal"><div class="step-num">FASE 1</div><h3>Liga</h3><p>Todas las parejas confirmadas se enfrentan entre sí una vez. Los puntos de cada partido dependen del resultado — mira la tabla de puntuación aquí abajo.</p></div>'
@@ -299,6 +316,7 @@ function renderFAQ(){
       + '</div>';
   }).join("");
   return '<section id="faq" class="section"><div class="section-inner">'
+    + '<span class="section-mark" aria-hidden="true">05</span>'
     + '<p class="eyebrow">Preguntas frecuentes</p><h2 class="section-title">¿Tienes dudas?</h2>'
     + '<div class="faq-list">' + rows + '</div>'
     + '</div></section>';
@@ -308,11 +326,13 @@ function renderInscripcion(){
   var i = STATE.info;
   if (ui.inscripcionSent){
     return '<section id="inscripcion" class="section section--alt"><div class="section-inner">'
+      + '<span class="section-mark" aria-hidden="true">02</span>'
       + '<p class="eyebrow">Inscripción</p><h2 class="section-title">Apúntate con tu pareja</h2>'
       + '<div class="insc-success"><div class="big">¡Solicitud enviada! <span class="dot-accent">·</span></div><p>La hemos registrado. Os confirmaremos la plaza por email o teléfono en cuanto la revisemos.</p></div>'
       + '</div></section>';
   }
   return '<section id="inscripcion" class="section section--alt"><div class="section-inner">'
+    + '<span class="section-mark" aria-hidden="true">02</span>'
     + '<p class="eyebrow">Inscripción</p><h2 class="section-title">Apúntate con tu pareja</h2>'
     + '<p class="section-lead">Precio: <strong>'+escHtml(i.precio||"Próximamente")+'</strong> · Plazo: <strong>'+escHtml(i.plazo||"Próximamente")+'</strong>. Rellena los datos y os avisamos en cuanto confirmemos la plaza.</p>'
     + '<div class="card" style="margin-top:1.8rem;max-width:520px;">'
@@ -341,6 +361,7 @@ function renderLiga(){
     body = renderStandingsTable(computeStandings()) + renderMatchesByJornada();
   }
   return '<section id="liga" class="section"><div class="section-inner">'
+    + '<span class="section-mark" aria-hidden="true">03</span>'
     + '<p class="eyebrow">Liga</p><h2 class="section-title">Clasificación</h2>'
     + '<p class="section-lead">Todas las parejas confirmadas se enfrentan entre sí una vez. Los puntos y los criterios de desempate están detallados en <a href="#formato">Formato</a>.</p>'
     + body + '</div></section>';
@@ -394,12 +415,14 @@ function renderCuadros(){
     }).join("") + '</div>';
   }
   return '<section id="cuadros" class="section section--alt"><div class="section-inner">'
+    + '<span class="section-mark" aria-hidden="true">04</span>'
     + '<p class="eyebrow">Cuadros</p><h2 class="section-title">Fase eliminatoria</h2>'
     + '<p class="section-lead">Tras la fase de liga, las parejas pasan a los cuadros eliminatorios hasta la final.</p>'
     + body + '</div></section>';
 }
 function renderContacto(){
   return '<section id="contacto" class="section"><div class="section-inner">'
+    + '<span class="section-mark" aria-hidden="true">06</span>'
     + '<p class="eyebrow">Contacto</p><h2 class="section-title">¿Dudas sobre EIGHT.?</h2>'
     + '<p class="section-lead">Escríbenos y te respondemos en menos de 24 horas.</p>'
     + '<div class="contact-actions">'
@@ -655,10 +678,11 @@ function applyFx(){
   var amp = window.innerWidth < 640 ? 0.55 : 1;
   document.documentElement.style.setProperty("--hero-amp", amp);
 
+  var hp = 0;
   if (fx.hero){
     var heroTop = fx.hero.getBoundingClientRect().top;
     var heroH = fx.hero.offsetHeight || 1;
-    var hp = fxClamp01(-heroTop / (heroH * 0.9));
+    hp = fxClamp01(-heroTop / (heroH * 0.9));
     document.documentElement.style.setProperty("--hero-p", hp.toFixed(4));
   }
 
@@ -727,6 +751,35 @@ function fxTiltLeave(e){
 }
 document.addEventListener("pointermove", fxTiltMove);
 document.addEventListener("pointerleave", fxTiltLeave, true);
+
+/* custom cursor — the dot tracks the real pointer 1:1 (no rAF throttle: any lag here is
+   immediately obvious, unlike the scroll effects), while the "clickable" state is
+   delegated so it keeps working after every mount() re-render without rebinding. */
+var cursorDotEl = document.getElementById("cursor-dot");
+var cursorBallEl = document.getElementById("cursor-ball");
+var CURSOR_CLICKABLE = "a, button, input, select, textarea, label";
+if (cursorDotEl && cursorBallEl){
+  document.addEventListener("pointermove", function(e){
+    if (e.pointerType && e.pointerType !== "mouse") return;
+    var t = "translate(" + e.clientX + "px," + e.clientY + "px)";
+    cursorDotEl.style.transform = t;
+    cursorBallEl.style.transform = t;
+  });
+  document.addEventListener("pointerover", function(e){
+    if (e.target.closest && e.target.closest(CURSOR_CLICKABLE)){
+      cursorDotEl.classList.add("is-active");
+      cursorBallEl.classList.add("is-active");
+    }
+  });
+  document.addEventListener("pointerout", function(e){
+    var leavingClickable = e.target.closest && e.target.closest(CURSOR_CLICKABLE);
+    var enteringClickable = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(CURSOR_CLICKABLE);
+    if (leavingClickable && !enteringClickable){
+      cursorDotEl.classList.remove("is-active");
+      cursorBallEl.classList.remove("is-active");
+    }
+  });
+}
 
 function onScrollFx(){
   if (fxTicking) return;
