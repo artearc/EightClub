@@ -608,23 +608,16 @@ function renderApp(){
    reverse, exactly in step. Two kinds of elements are handled:
      .fx-reveal    — fades/rises/settles into place as it enters the
                      lower part of the viewport (optionally combined
-                     with a per-element drift via data-speed). This is
-                     a small, brief motion (opacity + ~26px), which is
-                     why it plays regardless of prefers-reduced-motion:
-                     it's the content actually appearing, not a large
-                     or fast effect, so hiding it would just make cards
-                     look broken/invisible for no accessibility benefit.
+                     with a per-element drift via data-speed)
      .fx-parallax  — pure differential drift, no fade, keyed off how
                      far the element's center sits from the viewport's
                      center (data-speed sets amplitude + direction)
      .hero         — scale/fade/drift as the user scrolls past it,
                      applied via the --hero-p custom property
-   fx-parallax and the hero transform ARE turned off under reduced-
-   motion — those are the larger, continuous, scale/drift effects
-   that reduced-motion is meant to guard against.
-   ============================================================ */
+   None of this checks prefers-reduced-motion: it's deliberately kept
+   subtle (small amplitudes, no autoplay, nothing that moves without
+   the visitor's own scroll input) so it plays the same for everyone. */
 var fx = { hero:null, reveals:[], parallax:[] };
-var fxReduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 var fxTicking = false;
 
 function fxClamp01(v){ return v < 0 ? 0 : v > 1 ? 1 : v; }
@@ -663,7 +656,7 @@ function applyFx(){
   if (fx.hero){
     var heroTop = fx.hero.getBoundingClientRect().top;
     var heroH = fx.hero.offsetHeight || 1;
-    var hp = fxReduced ? 0 : fxClamp01(-heroTop / (heroH * 0.9));
+    var hp = fxClamp01(-heroTop / (heroH * 0.9));
     document.documentElement.style.setProperty("--hero-p", hp.toFixed(4));
   }
 
@@ -674,7 +667,7 @@ function applyFx(){
     var p = fxClamp01((revealStart - r.top) / (revealStart - revealEnd) - delay);
     var speed = parseFloat(el.getAttribute("data-speed")) || 0;
     var drift = 0;
-    if (speed && !fxReduced){
+    if (speed){
       var center = r.top + r.height / 2;
       drift = ((vh / 2 - center) / vh) * speed * amp;
     }
@@ -685,7 +678,7 @@ function applyFx(){
   fx.parallax.forEach(function(el){
     var r = el.getBoundingClientRect();
     var speed = parseFloat(el.getAttribute("data-speed")) || 20;
-    var d = fxReduced ? 0 : ((vh / 2 - (r.top + r.height / 2)) / vh) * speed * amp;
+    var d = ((vh / 2 - (r.top + r.height / 2)) / vh) * speed * amp;
     el.style.transform = "translateY(" + d.toFixed(1) + "px)";
   });
 
