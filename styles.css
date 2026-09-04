@@ -1,3 +1,5 @@
+@property --hero-num-hot{ syntax:'<number>'; inherits:true; initial-value:0; }
+
 :root{
   /* natural palette — warm beige canvas, olive green predominant, terracotta orange as the
      one punctual contrast accent, dark olive for text */
@@ -145,10 +147,22 @@ input,textarea,select{font:inherit;color:inherit;}
 /* the halftone dot layer slowly drifts — moving by an exact multiple of its own 16px tile
    size loops seamlessly, giving the hero a subtle living texture */
 @keyframes haloDrift{ from{background-position:0 0, 0 0;} to{background-position:160px 160px, 0 0;} }
+/* cursor-interactive dot layer, drawn in canvas on top of the CSS pattern above: dots
+   near the pointer swell up, and dots inside the ghost "8"'s silhouette gather into the
+   numeral itself. See heroDots* in JS. Canvas-drawn (not more DOM nodes) so hundreds of
+   dots cost nothing when idle — an empty clearRect — and only a small neighbourhood
+   around the cursor is ever computed, never the whole grid. */
+.hero-dots-canvas{position:absolute;inset:0;pointer-events:none;z-index:0;}
 .hero-inner{max-width:1080px;margin:0 auto;padding:0 1.5rem;position:relative;z-index:2;
   transform:translateY(calc(var(--hero-p) * -34px * var(--hero-amp)));opacity:calc(1 - var(--hero-p) * 0.6);will-change:transform,opacity;}
+/* --hero-num-hot is a registered (animatable) custom property so its own change can be
+   CSS-transitioned smoothly on hover without also smoothing --hero-p — that one is
+   JS-driven every scroll frame and must stay lag-free, so it's deliberately left out of
+   the transition list below. */
 .hero-num{position:absolute;right:-1.5rem;top:-3.5rem;font-family:var(--font-display);font-weight:400;font-size:min(44vw,24rem);line-height:1;color:var(--color-white);opacity:.14;z-index:1;pointer-events:none;user-select:none;
-  transform:translateY(calc(var(--hero-p) * -80px * var(--hero-amp))) scale(calc(1 + var(--hero-p) * 0.24 * var(--hero-amp))) rotate(calc(var(--hero-p) * 5deg * var(--hero-amp)));will-change:transform;}
+  transition:--hero-num-hot .6s var(--ease-out);
+  transform:translateY(calc(var(--hero-p) * -80px * var(--hero-amp))) scale(calc((1 + var(--hero-p) * 0.24 * var(--hero-amp)) * (1 + var(--hero-num-hot) * 0.25))) rotate(calc(var(--hero-p) * 5deg * var(--hero-amp)));will-change:transform;}
+.hero-num.is-hot{--hero-num-hot:1;}
 .hero-court{display:none;}
 .hero-eyebrow{font-family:var(--font-body);text-transform:uppercase;letter-spacing:.14em;font-size:.78rem;color:rgba(255,255,255,.85);font-weight:500;margin-bottom:1rem;}
 .hero-title{font-size:clamp(3.4rem,13vw,10.5rem);letter-spacing:.02em;color:var(--color-white);}

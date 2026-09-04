@@ -234,7 +234,7 @@ function renderHero(){
     + '<line x1="40" y1="145" x2="760" y2="145" stroke="currentColor" stroke-width="2"/>'
     + '<line x1="40" y1="355" x2="760" y2="355" stroke="currentColor" stroke-width="2"/>'
     + '</svg>';
-  return '<section class="hero'+animCls+'" id="inicio"><span class="hero-num" aria-hidden="true">8</span>'
+  return '<section class="hero'+animCls+'" id="inicio"><canvas class="hero-dots-canvas" aria-hidden="true"></canvas><span class="hero-num" aria-hidden="true">8</span>'
     + court
     + '<div class="hero-inner">'
     + '<p class="hero-eyebrow">Equipo 8 · Padel Club Alicante Indoor</p>'
@@ -653,6 +653,8 @@ function collectFx(){
   });
   fx.navLinks = Array.prototype.slice.call(document.querySelectorAll(".header-nav a"));
   fx.navSections = NAV_LINKS.map(function(l){ return { id:l[0], el:document.querySelector(l[0]) }; });
+  heroDotsSetup();
+  applyHeroNumHot();
   applyFx();
 }
 
@@ -756,6 +758,127 @@ if (cursorDotEl){
     if (leavingClickable && !enteringClickable) cursorDotEl.classList.remove("is-active");
   });
 }
+
+/* ============================================================
+   Hero cursor-interactive dots — canvas overlay on top of the CSS halftone pattern.
+   Dots within HERO_DOT_HOVER_R of the cursor swell up, sampled on the fly and
+   phase-locked to the CSS layer's own (still auto-drifting) background-position so the
+   bigger dots look like the same dots growing, not new ones appearing on top. A wide
+   radius + gentle falloff + soft-followed cursor position + low opacity keep the growth
+   reading as a smooth, spread-out swell rather than dots fusing into a solid blob.
+   The hero/canvas nodes are recreated on every mount() (they live inside #app), so
+   heroDotsSetup() re-grabs them each time; only the rAF loop itself is started once. */
+var heroDots = { canvas:null, ctx:null, heroEl:null, w:0, h:0, dpr:1, mouseX:-9999, mouseY:-9999, smoothX:-9999, smoothY:-9999, inHero:false, raf:null };
+var HERO_DOT_SPACING = 16;
+var HERO_DOT_HOVER_R = 150;
+
+function heroDotsSetup(){
+  var hero = document.querySelector(".hero");
+  if (!hero) return;
+  var canvas = hero.querySelector(".hero-dots-canvas");
+  if (!canvas) return;
+  var isNewCanvas = canvas !== heroDots.canvas;
+  heroDots.heroEl = hero;
+  heroDots.canvas = canvas;
+  heroDots.ctx = canvas.getContext("2d");
+  /* mount() replaces the hero/canvas DOM nodes on every re-render; a brand-new canvas
+     always needs its backing buffer (re)sized even if its CSS dimensions happen to
+     match the previous one's — a fresh <canvas> starts at the browser's 300x150
+     default until we set .width/.height ourselves, regardless of how big it looks. */
+  heroDotsResize(isNewCanvas);
+  if (!heroDots.raf) heroDots.raf = requestAnimationFrame(heroDotsLoop);
+}
+
+function heroDotsResize(force){
+  var hero = heroDots.heroEl, canvas = heroDots.canvas;
+  if (!hero || !canvas) return;
+  var r = hero.getBoundingClientRect();
+  var w = Math.round(r.width), h = Math.round(r.height);
+  if (!force && w === heroDots.w && h === heroDots.h) return;
+  heroDots.w = w;
+  heroDots.h = h;
+  heroDots.dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = w * heroDots.dpr;
+  canvas.height = h * heroDots.dpr;
+  canvas.style.width = w + "px";
+  canvas.style.height = h + "px";
+  heroDots.ctx.setTransform(heroDots.dpr, 0, 0, heroDots.dpr, 0, 0);
+}
+
+function heroDotsDraw(){
+  var ctx = heroDots.ctx;
+  if (!ctx) return;
+  ctx.clearRect(0, 0, heroDots.w, heroDots.h);
+  if (!heroDots.inHero) return;
+
+  /* soft-follow: the swell trails the actual cursor slightly instead of snapping to it
+     every frame, which is what reads as fluid rather than mechanical */
+  if (heroDots.smoothX < -900){ heroDots.smoothX = heroDots.mouseX; heroDots.smoothY = heroDots.mouseY; }
+  heroDots.smoothX += (heroDots.mouseX - heroDots.smoothX) * 0.1;
+  heroDots.smoothY += (heroDots.mouseY - heroDots.smoothY) * 0.1;
+  var mx = heroDots.smoothX, my = heroDots.smoothY;
+
+  var bgPos = getComputedStyle(heroDots.heroEl).backgroundPosition.split(",")[0].trim().split(/\s+/);
+  var phaseX = ((parseFloat(bgPos[0]) || 0) % HERO_DOT_SPACING + HERO_DOT_SPACING) % HERO_DOT_SPACING;
+  var phaseY = ((parseFloat(bgPos[1]) || 0) % HERO_DOT_SPACING + HERO_DOT_SPACING) % HERO_DOT_SPACING;
+  var startX = Math.floor((mx - HERO_DOT_HOVER_R - phaseX) / HERO_DOT_SPACING) * HERO_DOT_SPACING + phaseX;
+  var startY = Math.floor((my - HERO_DOT_HOVER_R - phaseY) / HERO_DOT_SPACING) * HERO_DOT_SPACING + phaseY;
+  ctx.fillStyle = "rgba(232,225,204,.5)";
+  for (var y = startY; y <= my + HERO_DOT_HOVER_R; y += HERO_DOT_SPACING){
+    for (var x = startX; x <= mx + HERO_DOT_HOVER_R; x += HERO_DOT_SPACING){
+      var d = Math.hypot(x - mx, y - my);
+      if (d > HERO_DOT_HOVER_R) continue;
+      /* plain smoothstep — no extra bias — so the size increase is spread gently across
+         the whole radius instead of concentrated (and visually fused) near the centre */
+      var t = 1 - d / HERO_DOT_HOVER_R;
+      t = t * t * (3 - 2 * t);
+      var r = 1.5 + t * 1.8;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function heroDotsLoop(){
+  heroDotsResize();
+  heroDotsDraw();
+  heroDots.raf = document.hidden ? null : requestAnimationFrame(heroDotsLoop);
+}
+document.addEventListener("visibilitychange", function(){
+  if (!document.hidden && heroDots.canvas && !heroDots.raf) heroDots.raf = requestAnimationFrame(heroDotsLoop);
+});
+document.addEventListener("pointermove", function(e){
+  if (e.pointerType && e.pointerType !== "mouse") return;
+  if (!heroDots.heroEl) return;
+  var r = heroDots.heroEl.getBoundingClientRect();
+  heroDots.inHero = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  heroDots.mouseX = e.clientX - r.left;
+  heroDots.mouseY = e.clientY - r.top;
+});
+window.addEventListener("resize", heroDotsResize);
+
+/* the ghost "8" itself: no dots, just the same big translucent numeral as before,
+   scaling up smoothly (CSS transition, not a per-frame loop) while the cursor sits over
+   it. mount() replaces the element on every re-render (e.g. a Firestore snapshot while
+   the visitor is mid-hover), which would silently drop the "is-hot" class along with the
+   old node — lastPointerX/Y + applyHeroNumHot() re-derive and reapply it right after
+   every mount, in collectFx(), so a background data refresh never resets the hover. */
+var lastPointerX = -9999, lastPointerY = -9999;
+function applyHeroNumHot(){
+  var el = document.querySelector(".hero-num");
+  if (!el) return;
+  var r = el.getBoundingClientRect();
+  var margin = 24;
+  var hot = lastPointerX >= r.left - margin && lastPointerX <= r.right + margin && lastPointerY >= r.top - margin && lastPointerY <= r.bottom + margin;
+  el.classList.toggle("is-hot", hot);
+}
+document.addEventListener("pointermove", function(e){
+  if (e.pointerType && e.pointerType !== "mouse") return;
+  lastPointerX = e.clientX;
+  lastPointerY = e.clientY;
+  applyHeroNumHot();
+});
 
 function onScrollFx(){
   if (fxTicking) return;
