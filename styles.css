@@ -331,6 +331,9 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 .bracket-edit-row{background:var(--surface-input);border-radius:var(--radius-medium);padding:.8rem .9rem;margin-bottom:.6rem;}
 .bracket-edit-teams{font-size:.9rem;font-weight:500;margin-bottom:.6rem;}
 .bracket-edit-teams .vs{color:var(--ink-faint);font-weight:500;}
+.bracket-edit-names{display:flex;flex-wrap:wrap;gap:.8rem;margin-bottom:.7rem;}
+.bracket-edit-side{display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;flex:1;min-width:220px;}
+.bracket-edit-side .field{flex:1;min-width:110px;}
 .bracket-edit-sets{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem;margin-bottom:.6rem;}
 .bm-set-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin-right:.1rem;}
 .bm-set-sep{color:var(--ink-faint);}

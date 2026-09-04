@@ -557,7 +557,10 @@ function renderOrgCuadrosTab(){
           + '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="bm-'+m.id+'-s'+n+'b" placeholder="B" value="'+(s.b!=null?s.b:"")+'">';
       }).join("");
       return '<div class="bracket-edit-row">'
-        + '<div class="bracket-edit-teams">'+escHtml(m.a)+' <span class="vs">vs</span> '+escHtml(m.b)+'</div>'
+        + '<div class="bracket-edit-names">'
+        +   '<div class="bracket-edit-side">'+bracketEditSideFields(m,"a","Pareja A")+'</div>'
+        +   '<div class="bracket-edit-side">'+bracketEditSideFields(m,"b","Pareja B")+'</div>'
+        + '</div>'
         + '<div class="bracket-edit-sets">'+setsHtml+'</div>'
         + '<div class="bracket-edit-actions">'
         +   '<select id="bm-ganador-'+m.id+'">'+options+'</select>'
@@ -1067,6 +1070,29 @@ function bracketSideLabel(roundId, side){
   if (!j1 || !j2) return null;
   return j1 + " / " + j2;
 }
+/* splits a stored "Nombre1 / Nombre2" (or "Por definir") label back into its two
+   player fields, so an existing match can be edited the same jugador-by-jugador way
+   it was created, instead of as one free-text string */
+function splitPairLabel(label){
+  if (label === "Por definir") return { j1:"", j2:"", tbd:true };
+  var parts = String(label || "").split(" / ");
+  return { j1: parts[0] || "", j2: parts[1] || "", tbd:false };
+}
+function bracketEditSideFields(m, side, label){
+  var parts = splitPairLabel(side === "a" ? m.a : m.b);
+  var idBase = "bm-edit-"+side+"-"+m.id;
+  return '<div class="field"><span>'+escHtml(label)+' · Jugador 1</span><input id="'+idBase+'-j1" type="text" value="'+escHtml(parts.j1)+'"></div>'
+    + '<div class="field"><span>'+escHtml(label)+' · Jugador 2</span><input id="'+idBase+'-j2" type="text" value="'+escHtml(parts.j2)+'"></div>'
+    + '<label class="bm-tbd-check"><input type="checkbox" id="'+idBase+'-tbd"'+(parts.tbd ? " checked" : "")+'>Por definir</label>';
+}
+function bracketEditSideLabel(matchId, side){
+  var idBase = "bm-edit-"+side+"-"+matchId;
+  var tbd = document.getElementById(idBase+"-tbd");
+  if (tbd && tbd.checked) return "Por definir";
+  var j1 = valOf(idBase+"-j1"), j2 = valOf(idBase+"-j2");
+  if (!j1 || !j2) return null;
+  return j1 + " / " + j2;
+}
 function addBracketMatch(roundId){
   var round = STATE.bracket.filter(function(r){ return r.id===roundId; })[0];
   if (!round) return;
@@ -1086,6 +1112,8 @@ function saveBracketMatch(roundId, matchId){
   if (!round) return;
   var m = round.matches.filter(function(x){ return x.id===matchId; })[0];
   if (!m) return;
+  var newA = bracketEditSideLabel(matchId, "a"), newB = bracketEditSideLabel(matchId, "b");
+  if (!newA || !newB){ alert("Escribe los dos jugadores de cada pareja, o marca \"Por definir\" en la que todavía no se sepa."); return; }
   var sets = [];
   for (var n = 1; n <= 3; n++){
     var a = valOf("bm-"+matchId+"-s"+n+"a"), b = valOf("bm-"+matchId+"-s"+n+"b");
@@ -1094,10 +1122,17 @@ function saveBracketMatch(roundId, matchId){
     if (a === "" || b === "" || isNaN(ga) || isNaN(gb)){ alert("Revisa el set "+n+": falta el marcador de una de las parejas."); return; }
     sets.push({ a: ga, b: gb });
   }
+  /* the winner <select>'s value is still the OLD label text (options are rendered from
+     the match as it was before this edit) — re-map it onto the new label so renaming a
+     pair doesn't silently clear or misattribute an already-recorded win */
+  var sel = document.getElementById("bm-ganador-"+matchId);
+  var selVal = sel ? sel.value : "";
+  var ganador = selVal === "" ? "" : selVal === m.a ? newA : selVal === m.b ? newB : "";
+  m.a = newA;
+  m.b = newB;
   m.sets = sets;
   m.resultado = sets.map(function(s){ return s.a + "-" + s.b; }).join(" / ");
-  var sel = document.getElementById("bm-ganador-"+matchId);
-  m.ganador = sel ? sel.value : "";
+  m.ganador = ganador;
   saveStateDoc("bracket", { rounds: STATE.bracket });
 }
 function addFaq(){
