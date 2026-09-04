@@ -372,10 +372,3 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 .fx-reveal{opacity:0;will-change:transform,opacity;}
 .fx-parallax{will-change:transform;}
 
-/* respect reduced-motion preference for the larger, continuous effects (hero scale/drift,
-   parallax) — see JS. .fx-reveal deliberately keeps animating: it's the content itself
-   appearing (a brief fade + ~26px rise), not a sustained or large motion, so freezing it
-   would just make cards look broken/invisible rather than accessible. */
-@media (prefers-reduced-motion: reduce){
-  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important;}
-}
