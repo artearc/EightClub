@@ -387,7 +387,9 @@ function renderCuadros(){
   if (!visibleRounds.length){
     body = emptyState("Cuadros pendientes de publicar", "Los cuadros eliminatorios se publicarán al terminar la fase de liga.");
   } else {
-    body = '<div class="bracket">' + visibleRounds.map(function(r, ri){
+    var multiRound = visibleRounds.length > 1;
+    body = (multiRound ? '<p class="bracket-swipe-hint">Desliza para ver más rondas →</p>' : "")
+      + '<div class="bracket">' + visibleRounds.map(function(r, ri){
       return '<div class="bracket-round"><h3>'+escHtml(r.name)+'</h3>'
         + r.matches.map(function(m, mi){
             return '<div class="bracket-match fx-reveal">'
@@ -397,7 +399,8 @@ function renderCuadros(){
               + '</div>';
           }).join("")
         + '</div>';
-    }).join("") + '</div>';
+    }).join("") + '</div>'
+      + (multiRound ? '<div class="bracket-dots">' + visibleRounds.map(function(r, ri){ return '<span class="bracket-dot'+(ri===0?" active":"")+'"></span>'; }).join("") + '</div>' : "");
   }
   return '<section id="cuadros" class="section section--alt"><div class="section-inner">'
     + '<span class="section-mark" aria-hidden="true">04</span>'
@@ -655,6 +658,7 @@ function collectFx(){
   fx.navSections = NAV_LINKS.map(function(l){ return { id:l[0], el:document.querySelector(l[0]) }; });
   heroDotsSetup();
   applyHeroNumHot();
+  bracketDotsSetup();
   applyFx();
 }
 
@@ -892,6 +896,23 @@ document.addEventListener("pointermove", function(e){
   lastPointerY = e.clientY;
   applyHeroNumHot();
 });
+
+/* mobile swipe affordances for Cuadros: one dot per round tracking which "page" the
+   bracket is scrolled to, and a hint line that fades out the moment the visitor actually
+   swipes (no need to keep telling them once they've discovered it). Re-attached every
+   mount() since .bracket is recreated along with the rest of #app each time. */
+function bracketDotsSetup(){
+  var bracket = document.querySelector(".bracket");
+  var dotsWrap = document.querySelector(".bracket-dots");
+  if (!bracket || !dotsWrap) return;
+  var dots = Array.prototype.slice.call(dotsWrap.querySelectorAll(".bracket-dot"));
+  var hint = document.querySelector(".bracket-swipe-hint");
+  bracket.addEventListener("scroll", function(){
+    var idx = Math.round(bracket.scrollLeft / (bracket.clientWidth || 1));
+    dots.forEach(function(d, i){ d.classList.toggle("active", i === idx); });
+    if (hint && bracket.scrollLeft > 8) hint.classList.add("seen");
+  }, { passive:true });
+}
 
 function onScrollFx(){
   if (fxTicking) return;

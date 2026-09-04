@@ -266,6 +266,11 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 .bracket-match div{padding:.25rem 0;font-size:.9rem;}
 .bracket-match .winner{color:var(--danger);}
 .bracket-score{font-size:.78rem;color:var(--ink-faint)!important;border-top:1px dashed rgba(55,61,32,.14);margin-top:.3rem;padding-top:.4rem!important;}
+/* mobile-only affordances for the swipe-between-rounds layout (see the max-width:640px
+   rules that turn .bracket into full-width snap pages) — hidden on desktop, where every
+   round is already visible side by side and there's nothing to hint at */
+.bracket-swipe-hint{display:none;}
+.bracket-dots{display:none;}
 
 /* empty state */
 .empty-state{margin-top:2rem;border:1.5px dashed rgba(55,61,32,.2);border-radius:var(--radius-cards);padding:2.4rem 1.8rem;text-align:center;color:var(--ink-soft);}
@@ -354,6 +359,14 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
      on a narrow screen */
   .bracket{gap:0;scroll-snap-type:x mandatory;}
   .bracket-round{flex:0 0 100%;min-width:100%;scroll-snap-align:center;padding:0 .1rem;}
+  /* swipe affordances: a hint line that fades away once the visitor actually swipes
+     (see bracketDotsSetup in JS), plus a small dot per round showing count + position —
+     the same pill/dot language as the rest of the site's pagination-style UI */
+  .bracket-swipe-hint{display:flex;align-items:center;justify-content:flex-end;gap:.3rem;font-size:.78rem;color:var(--ink-faint);margin:-.6rem 0 .6rem;transition:opacity .3s var(--ease-out);}
+  .bracket-swipe-hint.seen{opacity:0;}
+  .bracket-dots{display:flex;justify-content:center;gap:.5rem;margin-top:.9rem;}
+  .bracket-dot{width:7px;height:7px;border-radius:50%;background:rgba(55,61,32,.18);transition:background .25s var(--ease-out),transform .25s var(--ease-out);}
+  .bracket-dot.active{background:var(--signal);transform:scale(1.3);}
 }
 /* ---------- app-specific additions ---------- */
 .status-banner{background:var(--signal-tint);color:var(--signal);border-radius:var(--radius-medium);padding:.8rem 1.1rem;font-size:.85rem;margin-top:1.6rem;}
