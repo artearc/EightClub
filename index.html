@@ -1206,6 +1206,10 @@ function setPlayerAuthMode(mode){ ui.playerAuthMode = mode; ui.playerAuthError =
 function tryPlayerLogin(){
   var email = valOf("player-login-email"), password = valOf("player-login-password");
   if (!email || !password){ ui.playerAuthError = "Escribe el email y la contraseña."; mount(); return; }
+  if (email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()){
+    ui.playerAuthError = "Ese email es el del organizador — entra desde \"Acceso organizador\". Si también jugáis, cread la cuenta de la pareja con otro email.";
+    mount(); return;
+  }
   ui.playerAuthBusy = true; ui.playerAuthError = ""; mount();
   signInWithEmailAndPassword(auth, email, password).then(function(){
     ui.playerAuthBusy = false; mount();
@@ -1219,6 +1223,10 @@ function tryPlayerSignup(){
   var claimPin = valOf("player-claim-pin"), email = valOf("player-signup-email"), password = valOf("player-signup-password");
   if (!claimPin || !email || !password){ ui.playerAuthError = "Rellena el PIN, el email y la contraseña."; mount(); return; }
   if (password.length < 6){ ui.playerAuthError = "La contraseña debe tener al menos 6 caracteres."; mount(); return; }
+  if (email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()){
+    ui.playerAuthError = "Ese email es el del organizador y no puede usarse para una cuenta de pareja — usad otro email.";
+    mount(); return;
+  }
   var pair = STATE.pairs.filter(function(p){ return p.pin && p.pin === claimPin; })[0];
   if (!pair){ ui.playerAuthError = "Ese PIN no corresponde a ninguna pareja."; mount(); return; }
   if (STATE.pairAccounts.filter(function(a){ return a.id === pair.id; }).length){
