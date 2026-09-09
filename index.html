@@ -247,10 +247,20 @@ function passwordField(id, label, placeholder, autocomplete){
 }
 /* ---------- section renderers ---------- */
 var NAV_LINKS = [["#formato","Formato"],["#inscripcion","Inscripción"],["#liga","Liga"],["#cuadros","Cuadros"],["#faq","FAQ"],["#contacto","Contacto"]];
+/* the brand isotipo — the user's own vector export (Untitled Project - artboard-1 (1).svg,
+   the no-background revision), path data copied verbatim (do not touch the "d"
+   coordinates). The only change from the original file is dropping its hardcoded
+   fill:rgb(0,0,0) so the path inherits whatever `fill` the CSS sets on .isotipo instead
+   of always rendering pure black. */
+function isotipoSvg(){
+  return '<svg class="isotipo" viewBox="0 0 1024 819" aria-hidden="true" focusable="false">'
+    + '<path d="M 21.00 550.24 C 21.00 549.83 22.91 548.32 25.25 546.89 C 27.59 545.46 38.20 538.81 48.83 532.11 C 113.91 491.12 239.63 414.90 393.00 323.48 C 416.14 309.69 476.57 274.27 479.95 272.53 C 482.52 271.20 493.05 271.00 561.95 271.00 C 605.43 271.00 641.00 271.34 641.00 271.76 C 641.00 272.17 639.09 273.69 636.75 275.12 C 576.91 311.75 531.61 340.34 464.00 384.13 C 367.59 446.58 346.14 460.61 278.18 505.69 L 209.86 551.00 L 115.43 551.00 C 63.49 551.00 21.00 550.66 21.00 550.24 Z M 277.03 550.25 C 277.07 549.00 433.61 445.59 459.52 429.69 L 465.55 426.00 L 714.29 426.25 L 963.04 426.50 L 935.29 445.50 C 920.03 455.95 887.51 478.42 863.02 495.43 C 838.53 512.44 810.44 531.90 800.60 538.68 L 782.70 551.00 L 529.85 551.00 C 390.78 551.00 277.01 550.66 277.03 550.25 Z M 527.01 388.25 C 527.04 385.72 608.58 335.20 679.00 294.07 L 718.50 271.00 L 820.69 271.00 C 876.90 271.00 923.09 271.34 923.34 271.75 C 923.59 272.16 912.71 279.45 899.15 287.94 C 885.59 296.44 845.03 322.13 809.00 345.04 C 772.97 367.94 742.52 387.21 741.32 387.84 C 738.82 389.17 526.99 389.57 527.01 388.25 Z"/>'
+    + '</svg>';
+}
 function renderHeader(){
   var navLinks = NAV_LINKS.map(function(l){ return '<a href="'+l[0]+'">'+l[1]+'</a>'; }).join("");
   return '<header class="site-header"><div class="header-inner">'
-    + '<a href="#inicio" class="header-logo"><span class="brand-mark">EIGHT<span class="dot">.</span></span><span class="brand-sub">Club</span></a>'
+    + '<a href="#inicio" class="header-logo">'+isotipoSvg()+'<span class="brand-mark">EIGHT<span class="dot">.</span></span><span class="brand-sub">Club</span></a>'
     + '<nav class="header-nav">' + navLinks + '</nav>'
     + '<button class="header-lock header-lock--player" data-action="open-player" type="button"><span class="dot"></span> <span class="lock-label">'+(ui.playerPairId ? "Mis partidos" : "Jugador")+'</span><span class="lock-label-short">Jugador</span></button>'
     + '<button class="header-lock" data-action="open-organizer" type="button"><span class="dot"></span> <span class="lock-label">Organizador</span><span class="lock-label-short">Admin</span></button>'
