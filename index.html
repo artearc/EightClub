@@ -38,7 +38,7 @@ import {
   writeBatch, query, where, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
-  getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously, signOut, onAuthStateChanged
+  getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously, signOut, onAuthStateChanged, sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   initializeAppCheck, ReCaptchaEnterpriseProvider
@@ -102,7 +102,7 @@ var RATE_LIMIT_SECONDS = 20;
 
 const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:"", saveType:"", loginError:false, mobileMenuOpen:false, authUser:null, openFaq:null, showBackTop:false, faqDeleteConfirm:null, solicitudesSubtab:"pendientes", clearHistoryConfirm:false,
   playerModalOpen:false, playerPairId:null, playerIsOwner:false, playerSubmitMsg:"",
-  playerAuthMode:"login", playerAuthError:"", playerAuthBusy:false, lastRevisionSubmitAt:0 };
+  playerAuthMode:"login", playerAuthError:"", playerAuthBusy:false, playerResetMsg:"", lastRevisionSubmitAt:0 };
 try {
   ui.playerPairId = localStorage.getItem("eightPlayerPairId") || null;
   ui.playerIsOwner = localStorage.getItem("eightPlayerIsOwner") === "1";
@@ -493,7 +493,7 @@ function renderPlayerModal(){
   if (pair) return renderPlayerDashboard(pair);
 
   var mode = ui.playerAuthMode || "login";
-  var modeTabs = '<div class="subtabs" style="margin-bottom:1rem;">'
+  var modeTabs = mode === "reset" ? "" : '<div class="subtabs" style="margin-bottom:1rem;">'
     + '<button class="subtab-btn'+(mode==="login"?" active":"")+'" data-action="set-player-auth-mode" data-mode="login" type="button">Iniciar sesión</button>'
     + '<button class="subtab-btn'+(mode==="signup"?" active":"")+'" data-action="set-player-auth-mode" data-mode="signup" type="button">Crear cuenta</button>'
     + '<button class="subtab-btn'+(mode==="companion"?" active":"")+'" data-action="set-player-auth-mode" data-mode="companion" type="button">Soy acompañante</button>'
@@ -512,12 +512,20 @@ function renderPlayerModal(){
       + '<div class="field"><span>PIN de acompañante</span><input id="player-companion-pin" type="text" inputmode="numeric" maxlength="6" autocomplete="off"></div>'
       + errHtml
       + '<button class="btn btn-primary" style="margin-top:1rem;width:100%;justify-content:center;" data-action="try-companion-login" type="button"'+(ui.playerAuthBusy?" disabled":"")+'>'+(ui.playerAuthBusy?"Entrando…":"Entrar")+'</button>';
+  } else if (mode === "reset"){
+    body = '<button class="inline-link-btn" style="margin-bottom:1rem;" data-action="set-player-auth-mode" data-mode="login" type="button">← Volver a iniciar sesión</button>'
+      + '<p>Escribe el email de la cuenta de vuestra pareja y os mandamos un enlace para elegir una contraseña nueva.</p>'
+      + '<div class="field"><span>Email</span><input id="player-reset-email" type="email" autocomplete="off"></div>'
+      + errHtml
+      + (ui.playerResetMsg ? '<div class="status-banner">'+escHtml(ui.playerResetMsg)+'</div>' : "")
+      + '<button class="btn btn-primary" style="margin-top:1rem;width:100%;justify-content:center;" data-action="try-player-reset" type="button"'+(ui.playerAuthBusy?" disabled":"")+'>'+(ui.playerAuthBusy?"Enviando…":"Enviar enlace")+'</button>';
   } else {
     body = '<p>Inicia sesión con la cuenta de vuestra pareja.</p>'
       + '<div class="field"><span>Email</span><input id="player-login-email" type="email" autocomplete="off"></div>'
       + passwordField("player-login-password", "Contraseña", "", "current-password")
       + errHtml
-      + '<button class="btn btn-primary" style="margin-top:1rem;width:100%;justify-content:center;" data-action="try-player-login" type="button"'+(ui.playerAuthBusy?" disabled":"")+'>'+(ui.playerAuthBusy?"Entrando…":"Entrar")+'</button>';
+      + '<button class="btn btn-primary" style="margin-top:1rem;width:100%;justify-content:center;" data-action="try-player-login" type="button"'+(ui.playerAuthBusy?" disabled":"")+'>'+(ui.playerAuthBusy?"Entrando…":"Entrar")+'</button>'
+      + '<button class="inline-link-btn" style="margin-top:.9rem;" data-action="set-player-auth-mode" data-mode="reset" type="button">¿Olvidaste la contraseña?</button>';
   }
   return '<div class="modal-overlay" data-modal="player"><div class="modal-panel modal-panel--login">'
     + '<div class="modal-header"><h2>Área de jugador</h2><button class="modal-close" data-action="close-player" type="button">✕</button></div>'
@@ -1191,9 +1199,9 @@ function resolveOwnerPair(){
     try { localStorage.setItem("eightPlayerPairId", acc.id); localStorage.setItem("eightPlayerIsOwner", "1"); } catch(e){}
   }
 }
-function openPlayerModal(){ ui.playerModalOpen = true; ui.playerAuthError = ""; ui.playerSubmitMsg = ""; ui.playerAuthMode = "login"; mount(); }
+function openPlayerModal(){ ui.playerModalOpen = true; ui.playerAuthError = ""; ui.playerSubmitMsg = ""; ui.playerResetMsg = ""; ui.playerAuthMode = "login"; mount(); }
 function closePlayerModal(){ ui.playerModalOpen = false; mount(); }
-function setPlayerAuthMode(mode){ ui.playerAuthMode = mode; ui.playerAuthError = ""; mount(); }
+function setPlayerAuthMode(mode){ ui.playerAuthMode = mode; ui.playerAuthError = ""; ui.playerResetMsg = ""; mount(); }
 
 function tryPlayerLogin(){
   var email = valOf("player-login-email"), password = valOf("player-login-password");
@@ -1228,6 +1236,20 @@ function tryPlayerSignup(){
   }).catch(function(err){
     ui.playerAuthBusy = false;
     ui.playerAuthError = (err && err.code === "auth/email-already-in-use") ? "Ese email ya tiene una cuenta." : "No se pudo crear la cuenta. Inténtalo de nuevo.";
+    mount();
+  });
+}
+function tryPlayerResetPassword(){
+  var email = valOf("player-reset-email");
+  if (!email){ ui.playerAuthError = "Escribe tu email."; mount(); return; }
+  ui.playerAuthBusy = true; ui.playerAuthError = ""; ui.playerResetMsg = ""; mount();
+  var genericMsg = "Si ese email tiene una cuenta, os hemos enviado un enlace para elegir una contraseña nueva.";
+  sendPasswordResetEmail(auth, email).then(function(){
+    ui.playerAuthBusy = false; ui.playerResetMsg = genericMsg; mount();
+  }).catch(function(err){
+    ui.playerAuthBusy = false;
+    if (err && err.code === "auth/invalid-email"){ ui.playerAuthError = "Ese email no es válido."; }
+    else { ui.playerResetMsg = genericMsg; } /* never reveal whether the account exists */
     mount();
   });
 }
@@ -1635,6 +1657,7 @@ document.addEventListener("click", function(e){
     case "set-player-auth-mode": setPlayerAuthMode(el.getAttribute("data-mode")); break;
     case "try-player-login": tryPlayerLogin(); break;
     case "try-player-signup": tryPlayerSignup(); break;
+    case "try-player-reset": tryPlayerResetPassword(); break;
     case "try-companion-login": tryCompanionLogin(); break;
     case "generate-companion-pin": generateCompanionPin(); break;
     case "player-logout": playerLogout(); break;
@@ -1651,6 +1674,7 @@ document.addEventListener("keydown", function(e){
     case "player-login-password": tryPlayerLogin(); break;
     case "player-signup-password": tryPlayerSignup(); break;
     case "player-companion-pin": tryCompanionLogin(); break;
+    case "player-reset-email": tryPlayerResetPassword(); break;
   }
 });
 document.addEventListener("click", function(e){
