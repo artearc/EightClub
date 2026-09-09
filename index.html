@@ -34,10 +34,11 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
-  getFirestore, doc, getDoc, setDoc, onSnapshot, collection, addDoc, updateDoc, deleteDoc, serverTimestamp
+  getFirestore, doc, getDoc, setDoc, onSnapshot, collection, addDoc, updateDoc, deleteDoc, serverTimestamp,
+  writeBatch, query, where, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
-  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
+  getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously, signOut, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 /* ============================================================
@@ -74,19 +75,25 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 
 const STATE = {
-  loaded: { info:false, pairs:false, matches:false, bracket:false, faqs:false, revisiones:false },
+  loaded: { info:false, pairs:false, matches:false, bracket:false, faqs:false, revisiones:false, pairAccounts:false },
   info: { categoria:"Quinta Masculina", sede:"Padel Club Alicante Indoor", fechas:"", precio:"", plazo:"", contacto: CONTACT_EMAIL },
   pairs: [],
   matches: [],
   bracket: [],
   faqs: DEFAULT_FAQS.slice(),
   inscripciones: [],
-  revisiones: []
+  revisiones: [],
+  pairAccounts: []
 };
+var RATE_LIMIT_SECONDS = 20;
 
 const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:"", saveType:"", loginError:false, mobileMenuOpen:false, authUser:null, openFaq:null, showBackTop:false, faqDeleteConfirm:null, solicitudesSubtab:"pendientes", clearHistoryConfirm:false,
-  playerModalOpen:false, playerPairId:null, playerPinError:false, playerSubmitMsg:"" };
-try { ui.playerPairId = localStorage.getItem("eightPlayerPairId") || null; } catch(e){}
+  playerModalOpen:false, playerPairId:null, playerIsOwner:false, playerSubmitMsg:"",
+  playerAuthMode:"login", playerAuthError:"", playerAuthBusy:false, lastRevisionSubmitAt:0 };
+try {
+  ui.playerPairId = localStorage.getItem("eightPlayerPairId") || null;
+  ui.playerIsOwner = localStorage.getItem("eightPlayerIsOwner") === "1";
+} catch(e){}
 
 let inscripcionesUnsub = null;
 
@@ -221,8 +228,8 @@ function renderHeader(){
   return '<header class="site-header"><div class="header-inner">'
     + '<a href="#inicio" class="header-logo"><span class="brand-mark">EIGHT<span class="dot">.</span></span><span class="brand-sub">Club</span></a>'
     + '<nav class="header-nav">' + navLinks + '</nav>'
-    + '<button class="header-lock" data-action="open-player" type="button"><span class="dot"></span> <span class="lock-label">'+(ui.playerPairId ? "Mis partidos" : "Jugador")+'</span></button>'
-    + '<button class="header-lock" data-action="open-organizer" type="button"><span class="dot"></span> <span class="lock-label">Organizador</span></button>'
+    + '<button class="header-lock header-lock--player" data-action="open-player" type="button"><span class="dot"></span> <span class="lock-label">'+(ui.playerPairId ? "Mis partidos" : "Jugador")+'</span><span class="lock-label-short">Jugador</span></button>'
+    + '<button class="header-lock" data-action="open-organizer" type="button"><span class="dot"></span> <span class="lock-label">Organizador</span><span class="lock-label-short">Admin</span></button>'
     + '<button class="mobile-menu-btn" data-action="toggle-mobile-menu" type="button" aria-label="Abrir menú" aria-expanded="'+(ui.mobileMenuOpen?"true":"false")+'">'+(ui.mobileMenuOpen?"✕":"☰")+'</button>'
     + '</div>'
     + (ui.mobileMenuOpen ? '<nav class="mobile-nav-panel open">' + NAV_LINKS.map(function(l){ return '<a href="'+l[0]+'" data-action="close-mobile-menu">'+l[1]+'</a>'; }).join("") + '</nav>' : '')
@@ -436,27 +443,63 @@ function renderFooter(){
 }
 
 /* ---------- player panel ---------- */
-/* a player "logs in" with their pair's PIN (no real account/auth — same trust level as
-   the public inscripción form, just gated by a code only the organizer hands out) and
-   from there can submit a proposed result for one of their own matches. That submission
-   is never written straight into state/matches or state/bracket: it goes into the public
-   "revisiones" collection as its own doc with estado:"pendiente", and only an
-   organizer's accept-revision/reject-revision action (see below) ever touches the real
-   match data — mirroring exactly how public inscripciones already work. */
+/* real accounts, one per pair (Firebase email/password) — created by claiming a pair
+   with the one-time PIN the organizer hands out (see tryPlayerSignup). From inside the
+   account the owner can generate a separate "companion PIN" (state/pairAccounts,
+   owner-only field, rule-enforced) so their partner can get in on their own device
+   without ever knowing the shared password — via anonymous auth, see tryCompanionLogin.
+   Either way, submitting a result never writes straight into state/matches or
+   state/bracket: it goes into the public "revisiones" collection as its own doc with
+   estado:"pendiente" (plus a rate-limit stamp, see submitPlayerResult), and only an
+   organizer's accept-revision/reject-revision action ever touches the real match data —
+   mirroring exactly how the public inscripción form already works. */
 function renderPlayerModal(){
   if (!ui.playerModalOpen) return "";
   var pair = ui.playerPairId ? pairById(ui.playerPairId) : null;
-  if (!pair){
-    return '<div class="modal-overlay" data-modal="player"><div class="modal-panel modal-panel--login">'
-      + '<div class="modal-header"><h2>Área de jugador</h2><button class="modal-close" data-action="close-player" type="button">✕</button></div>'
-      + '<div class="login-body">'
-      + '<p>Introduce el PIN de tu pareja para ver vuestros partidos y enviar resultados.</p>'
-      + '<div class="field"><input id="player-pin-input" type="text" inputmode="numeric" maxlength="4" placeholder="PIN" autocomplete="off"></div>'
-      + (ui.playerPinError ? '<p class="login-error">Ese PIN no corresponde a ninguna pareja.</p>' : "")
-      + '<button class="btn btn-primary" style="margin-top:1.2rem;width:100%;justify-content:center;" data-action="try-player-login" type="button">Entrar</button>'
-      + '</div></div></div>';
+  if (pair) return renderPlayerDashboard(pair);
+
+  var mode = ui.playerAuthMode || "login";
+  var modeTabs = '<div class="subtabs" style="margin-bottom:1rem;">'
+    + '<button class="subtab-btn'+(mode==="login"?" active":"")+'" data-action="set-player-auth-mode" data-mode="login" type="button">Iniciar sesión</button>'
+    + '<button class="subtab-btn'+(mode==="signup"?" active":"")+'" data-action="set-player-auth-mode" data-mode="signup" type="button">Crear cuenta</button>'
+    + '<button class="subtab-btn'+(mode==="companion"?" active":"")+'" data-action="set-player-auth-mode" data-mode="companion" type="button">Soy acompañante</button>'
+    + '</div>';
+  var errHtml = ui.playerAuthError ? '<p class="login-error">'+escHtml(ui.playerAuthError)+'</p>' : "";
+  var body;
+  if (mode === "signup"){
+    body = '<p>Creáis la cuenta de vuestra pareja una sola vez, con el PIN que os dio el organizador.</p>'
+      + '<div class="field"><span>PIN de la pareja</span><input id="player-claim-pin" type="text" inputmode="numeric" maxlength="4" autocomplete="off"></div>'
+      + '<div class="field"><span>Email</span><input id="player-signup-email" type="email" autocomplete="off"></div>'
+      + '<div class="field"><span>Contraseña</span><input id="player-signup-password" type="password" autocomplete="new-password"></div>'
+      + errHtml
+      + '<button class="btn btn-primary" style="margin-top:1rem;width:100%;justify-content:center;" data-action="try-player-signup" type="button"'+(ui.playerAuthBusy?" disabled":"")+'>'+(ui.playerAuthBusy?"Creando…":"Crear cuenta")+'</button>';
+  } else if (mode === "companion"){
+    body = '<p>Si tu compañero/a ya tiene la cuenta creada, que te dé el PIN de acompañante desde su panel — entras con él, sin necesidad de su contraseña.</p>'
+      + '<div class="field"><span>PIN de acompañante</span><input id="player-companion-pin" type="text" inputmode="numeric" maxlength="6" autocomplete="off"></div>'
+      + errHtml
+      + '<button class="btn btn-primary" style="margin-top:1rem;width:100%;justify-content:center;" data-action="try-companion-login" type="button"'+(ui.playerAuthBusy?" disabled":"")+'>'+(ui.playerAuthBusy?"Entrando…":"Entrar")+'</button>';
+  } else {
+    body = '<p>Inicia sesión con la cuenta de vuestra pareja.</p>'
+      + '<div class="field"><span>Email</span><input id="player-login-email" type="email" autocomplete="off"></div>'
+      + '<div class="field"><span>Contraseña</span><input id="player-login-password" type="password" autocomplete="current-password"></div>'
+      + errHtml
+      + '<button class="btn btn-primary" style="margin-top:1rem;width:100%;justify-content:center;" data-action="try-player-login" type="button"'+(ui.playerAuthBusy?" disabled":"")+'>'+(ui.playerAuthBusy?"Entrando…":"Entrar")+'</button>';
   }
-  return renderPlayerDashboard(pair);
+  return '<div class="modal-overlay" data-modal="player"><div class="modal-panel modal-panel--login">'
+    + '<div class="modal-header"><h2>Área de jugador</h2><button class="modal-close" data-action="close-player" type="button">✕</button></div>'
+    + '<div class="login-body" style="text-align:left;">' + modeTabs + body + '</div></div></div>';
+}
+function renderCompanionPinSection(pair){
+  if (!ui.playerIsOwner) return "";
+  var acc = STATE.pairAccounts.filter(function(a){ return a.id === pair.id; })[0];
+  var pin = acc && acc.companionPin;
+  return '<div class="card" style="padding:1.2rem;margin-top:1.4rem;">'
+    + '<h4 style="margin-bottom:.5rem;">PIN para tu compañero/a</h4>'
+    + '<p style="color:var(--ink-soft);font-size:.85rem;margin-bottom:.7rem;">Compártelo con tu compañero/a: con él entra desde "Soy acompañante" sin necesitar vuestra contraseña.</p>'
+    + (pin ? '<p style="font-family:var(--font-display);font-size:1.6rem;color:var(--signal);margin-bottom:.7rem;">'+escHtml(pin)+'</p>' : '<p style="color:var(--ink-faint);font-size:.85rem;margin-bottom:.7rem;">Todavía no has generado ninguno.</p>')
+    + (ui.playerAuthError ? '<p class="login-error" style="margin-bottom:.7rem;">'+escHtml(ui.playerAuthError)+'</p>' : "")
+    + '<button class="btn btn-outline btn-sm" data-action="generate-companion-pin" type="button">'+(pin?"Generar uno nuevo":"Generar PIN")+'</button>'
+    + '</div>';
 }
 function renderPlayerDashboard(pair){
   var label = pair.j1 + " / " + pair.j2;
@@ -486,10 +529,11 @@ function renderPlayerDashboard(pair){
   return '<div class="modal-overlay" data-modal="player"><div class="modal-panel">'
     + '<div class="modal-header"><h2>Hola, '+escHtml(pair.j1)+'</h2><button class="modal-close" data-action="close-player" type="button">✕</button></div>'
     + '<div class="modal-body">'
-    + '<p style="color:var(--ink-soft);font-size:.9rem;">Pareja: <strong>'+escHtml(label)+'</strong></p>'
+    + '<p style="color:var(--ink-soft);font-size:.9rem;">Pareja: <strong>'+escHtml(label)+'</strong>'+(ui.playerIsOwner?"":' <span class="badge" style="background:var(--signal-tint);color:var(--signal);">Acompañante</span>')+'</p>'
     + (ui.playerSubmitMsg ? '<div class="status-banner">'+escHtml(ui.playerSubmitMsg)+'</div>' : "")
     + '<h4 style="margin-top:1.2rem;">Liga</h4>' + ligaHtml
     + (myBracketMatches.length ? '<h4 style="margin-top:1.4rem;">Cuadros</h4>' + bracketHtml : "")
+    + renderCompanionPinSection(pair)
     + '<button class="btn btn-ghost" style="margin-top:1.4rem;border-color:var(--border);color:var(--ink-faint);" data-action="player-logout" type="button">Cerrar sesión</button>'
     + '</div></div></div>';
 }
@@ -615,8 +659,12 @@ function renderOrgRevisionesTab(){
 }
 function renderOrgParejasTab(){
   var rows = STATE.pairs.map(function(p){
-    return '<div class="org-row"><span class="grow"><strong>'+escHtml(p.j1)+' / '+escHtml(p.j2)+'</strong><small>'+escHtml(p.contacto||"sin contacto")+' · PIN jugador: <strong>'+(p.pin?escHtml(p.pin):"sin generar")+'</strong></small></span>'
-      + '<button class="btn btn-outline btn-sm" data-action="regenerate-pin" data-id="'+p.id+'" type="button">'+(p.pin?"Nuevo PIN":"Generar PIN")+'</button>'
+    var hasAccount = STATE.pairAccounts.some(function(a){ return a.id === p.id; });
+    var pinInfo = hasAccount
+      ? "cuenta ya creada"
+      : "PIN de creación de cuenta: <strong>"+(p.pin?escHtml(p.pin):"sin generar")+"</strong>";
+    return '<div class="org-row"><span class="grow"><strong>'+escHtml(p.j1)+' / '+escHtml(p.j2)+'</strong><small>'+escHtml(p.contacto||"sin contacto")+' · '+pinInfo+'</small></span>'
+      + (hasAccount ? "" : '<button class="btn btn-outline btn-sm" data-action="regenerate-pin" data-id="'+p.id+'" type="button">'+(p.pin?"Nuevo PIN":"Generar PIN")+'</button>')
       + '<button class="btn btn-sm '+(p.confirmed?"btn-outline":"btn-ghost")+'" style="'+(p.confirmed?"":"border-color:var(--border);color:var(--ink-faint);")+'" data-action="toggle-confirmed" data-id="'+p.id+'" type="button">'+(p.confirmed?"Confirmada":"Marcar confirmada")+'</button>'
       + '<button class="btn btn-danger btn-sm" data-action="delete-pair" data-id="'+p.id+'" type="button">Eliminar</button></div>';
   }).join("");
@@ -1096,25 +1144,103 @@ function openOrganizer(){ ui.modalOpen = true; ui.loginError = false; ui.solicit
 function closeOrganizer(){ ui.modalOpen = false; ui.faqDeleteConfirm = null; mount(); }
 function relock(){ signOut(auth); ui.modalOpen = false; ui.faqDeleteConfirm = null; mount(); }
 
-function openPlayerModal(){ ui.playerModalOpen = true; ui.playerPinError = false; ui.playerSubmitMsg = ""; mount(); }
+/* currentPlayerAuthUser mirrors whatever the shared `auth` object's current user is,
+   EXCEPT when that user is the organizer admin — see the onAuthStateChanged wiring
+   near the bottom of the file, which is the single source of truth for this. */
+var currentPlayerAuthUser = null;
+function resolveOwnerPair(){
+  if (!currentPlayerAuthUser || currentPlayerAuthUser.isAnonymous) return;
+  var acc = STATE.pairAccounts.filter(function(a){ return a.ownerUid === currentPlayerAuthUser.uid; })[0];
+  if (acc){
+    ui.playerPairId = acc.id;
+    ui.playerIsOwner = true;
+    try { localStorage.setItem("eightPlayerPairId", acc.id); localStorage.setItem("eightPlayerIsOwner", "1"); } catch(e){}
+  }
+}
+function openPlayerModal(){ ui.playerModalOpen = true; ui.playerAuthError = ""; ui.playerSubmitMsg = ""; ui.playerAuthMode = "login"; mount(); }
 function closePlayerModal(){ ui.playerModalOpen = false; mount(); }
+function setPlayerAuthMode(mode){ ui.playerAuthMode = mode; ui.playerAuthError = ""; mount(); }
+
 function tryPlayerLogin(){
-  var pin = valOf("player-pin-input");
-  var pair = STATE.pairs.filter(function(p){ return p.pin && p.pin === pin; })[0];
-  if (!pair){ ui.playerPinError = true; mount(); return; }
-  ui.playerPairId = pair.id;
-  ui.playerPinError = false;
-  try { localStorage.setItem("eightPlayerPairId", pair.id); } catch(e){}
-  mount();
+  var email = valOf("player-login-email"), password = valOf("player-login-password");
+  if (!email || !password){ ui.playerAuthError = "Escribe el email y la contraseña."; mount(); return; }
+  ui.playerAuthBusy = true; ui.playerAuthError = ""; mount();
+  signInWithEmailAndPassword(auth, email, password).then(function(){
+    ui.playerAuthBusy = false; mount();
+  }).catch(function(){
+    ui.playerAuthBusy = false;
+    ui.playerAuthError = "Email o contraseña incorrectos.";
+    mount();
+  });
+}
+function tryPlayerSignup(){
+  var claimPin = valOf("player-claim-pin"), email = valOf("player-signup-email"), password = valOf("player-signup-password");
+  if (!claimPin || !email || !password){ ui.playerAuthError = "Rellena el PIN, el email y la contraseña."; mount(); return; }
+  if (password.length < 6){ ui.playerAuthError = "La contraseña debe tener al menos 6 caracteres."; mount(); return; }
+  var pair = STATE.pairs.filter(function(p){ return p.pin && p.pin === claimPin; })[0];
+  if (!pair){ ui.playerAuthError = "Ese PIN no corresponde a ninguna pareja."; mount(); return; }
+  if (STATE.pairAccounts.filter(function(a){ return a.id === pair.id; }).length){
+    ui.playerAuthError = 'Esta pareja ya tiene una cuenta creada. Usad "Iniciar sesión".'; mount(); return;
+  }
+  ui.playerAuthBusy = true; ui.playerAuthError = ""; mount();
+  createUserWithEmailAndPassword(auth, email, password).then(function(cred){
+    return setDoc(doc(db, "pairAccounts", pair.id), { ownerUid: cred.user.uid, companionPin: null, companionPinCreatedAt: null });
+  }).then(function(){
+    ui.playerAuthBusy = false;
+    ui.playerPairId = pair.id;
+    ui.playerIsOwner = true;
+    try { localStorage.setItem("eightPlayerPairId", pair.id); localStorage.setItem("eightPlayerIsOwner", "1"); } catch(e){}
+    mount();
+  }).catch(function(err){
+    ui.playerAuthBusy = false;
+    ui.playerAuthError = (err && err.code === "auth/email-already-in-use") ? "Ese email ya tiene una cuenta." : "No se pudo crear la cuenta. Inténtalo de nuevo.";
+    mount();
+  });
+}
+function tryCompanionLogin(){
+  var pin = valOf("player-companion-pin");
+  if (!pin){ ui.playerAuthError = "Escribe el PIN de acompañante."; mount(); return; }
+  ui.playerAuthBusy = true; ui.playerAuthError = ""; mount();
+  getDocs(query(collection(db, "pairAccounts"), where("companionPin", "==", pin))).then(function(qs){
+    if (qs.empty){ ui.playerAuthBusy = false; ui.playerAuthError = "Ese PIN de acompañante no es válido."; mount(); return; }
+    var pairId = qs.docs[0].id;
+    return signInAnonymously(auth).then(function(){
+      ui.playerAuthBusy = false;
+      ui.playerPairId = pairId;
+      ui.playerIsOwner = false;
+      try { localStorage.setItem("eightPlayerPairId", pairId); localStorage.setItem("eightPlayerIsOwner", "0"); } catch(e){}
+      mount();
+    });
+  }).catch(function(){
+    ui.playerAuthBusy = false;
+    ui.playerAuthError = "No se pudo entrar. Comprueba tu conexión e inténtalo de nuevo.";
+    mount();
+  });
+}
+function generateCompanionPin(){
+  if (!ui.playerIsOwner || !ui.playerPairId) return;
+  var newPin = String(Math.floor(100000 + Math.random() * 900000));
+  updateDoc(doc(db, "pairAccounts", ui.playerPairId), { companionPin: newPin, companionPinCreatedAt: serverTimestamp() })
+    .then(function(){ ui.playerAuthError = ""; mount(); })
+    .catch(function(){ ui.playerAuthError = "No se pudo generar el PIN. Inténtalo de nuevo."; mount(); });
 }
 function playerLogout(){
+  var wasRealAccount = currentPlayerAuthUser && currentPlayerAuthUser.email !== ADMIN_EMAIL;
   ui.playerPairId = null;
-  try { localStorage.removeItem("eightPlayerPairId"); } catch(e){}
+  ui.playerIsOwner = false;
+  try { localStorage.removeItem("eightPlayerPairId"); localStorage.removeItem("eightPlayerIsOwner"); } catch(e){}
+  if (wasRealAccount) signOut(auth);
   mount();
 }
 function submitPlayerResult(tipo, matchId, roundId){
   var pair = ui.playerPairId ? pairById(ui.playerPairId) : null;
   if (!pair) return;
+  if (!currentPlayerAuthUser){ alert("Tu sesión ha caducado. Vuelve a entrar."); playerLogout(); return; }
+  var msSinceLast = Date.now() - ui.lastRevisionSubmitAt;
+  if (ui.lastRevisionSubmitAt && msSinceLast < RATE_LIMIT_SECONDS * 1000){
+    alert("Espera " + Math.ceil((RATE_LIMIT_SECONDS * 1000 - msSinceLast) / 1000) + " segundos antes de enviar otro resultado.");
+    return;
+  }
   var label = pair.j1 + " / " + pair.j2;
   var mySide, rivalLabel, jornada = null, m;
   if (tipo === "liga"){
@@ -1142,15 +1268,26 @@ function submitPlayerResult(tipo, matchId, roundId){
   if (!sets.length){ alert("Introduce al menos el resultado de un set."); return; }
   var btn = document.querySelector('[data-action="submit-player-result"][data-id="'+matchId+'"]');
   if (btn){ btn.disabled = true; btn.textContent = "Enviando…"; }
-  addDoc(collection(db, "revisiones"), {
+  /* the revisión and the rate-limit stamp are written in one batch: Firestore rules
+     validate each write against the state as of the START of the batch, so the rule can
+     check "was the *previous* rateLimits/{uid} write old enough" while this same batch
+     both creates the revisión and refreshes that timestamp for next time. */
+  var revRef = doc(collection(db, "revisiones"));
+  var batch = writeBatch(db);
+  batch.set(revRef, {
     tipo: tipo, matchId: matchId, roundId: roundId || null, jornada: jornada,
     pairId: pair.id, pairLabel: label, rivalLabel: rivalLabel,
-    sets: sets, estado: "pendiente", creadoEn: serverTimestamp()
-  }).then(function(){
+    sets: sets, estado: "pendiente", uid: currentPlayerAuthUser.uid, creadoEn: serverTimestamp()
+  });
+  batch.set(doc(db, "rateLimits", currentPlayerAuthUser.uid), { lastAt: serverTimestamp() });
+  batch.commit().then(function(){
+    ui.lastRevisionSubmitAt = Date.now();
     ui.playerSubmitMsg = "Resultado enviado. El organizador lo revisará pronto.";
     mount();
-  }).catch(function(){
-    alert("No se pudo enviar. Comprueba tu conexión e inténtalo de nuevo.");
+  }).catch(function(err){
+    alert(err && err.code === "permission-denied"
+      ? "Estás enviando resultados demasiado rápido. Espera un momento e inténtalo de nuevo."
+      : "No se pudo enviar. Comprueba tu conexión e inténtalo de nuevo.");
     if (btn){ btn.disabled = false; btn.textContent = "Enviar resultado"; }
   });
 }
@@ -1461,7 +1598,11 @@ document.addEventListener("click", function(e){
     case "cancel-delete-faq": cancelDeleteFaq(); break;
     case "open-player": openPlayerModal(); break;
     case "close-player": closePlayerModal(); break;
+    case "set-player-auth-mode": setPlayerAuthMode(el.getAttribute("data-mode")); break;
     case "try-player-login": tryPlayerLogin(); break;
+    case "try-player-signup": tryPlayerSignup(); break;
+    case "try-companion-login": tryCompanionLogin(); break;
+    case "generate-companion-pin": generateCompanionPin(); break;
     case "player-logout": playerLogout(); break;
     case "submit-player-result": submitPlayerResult(el.getAttribute("data-tipo"), id, el.getAttribute("data-round") || null); break;
     case "accept-revision": acceptRevision(id); break;
@@ -1470,8 +1611,13 @@ document.addEventListener("click", function(e){
   }
 });
 document.addEventListener("keydown", function(e){
-  if (e.key === "Enter" && e.target && e.target.id === "login-password-input") tryLogin();
-  if (e.key === "Enter" && e.target && e.target.id === "player-pin-input") tryPlayerLogin();
+  if (e.key !== "Enter" || !e.target || !e.target.id) return;
+  switch (e.target.id){
+    case "login-password-input": tryLogin(); break;
+    case "player-login-password": tryPlayerLogin(); break;
+    case "player-signup-password": tryPlayerSignup(); break;
+    case "player-companion-pin": tryCompanionLogin(); break;
+  }
 });
 
 /* ---------- realtime subscriptions ---------- */
@@ -1513,8 +1659,22 @@ onSnapshot(collection(db, "revisiones"), function(qs){
   STATE.loaded.revisiones = true; mount();
 }, function(){ STATE.loaded.revisiones = true; mount(); });
 
+/* pairId -> {ownerUid, companionPin} — public read (companion login needs to look up a
+   pair by its companionPin without being signed in yet), but write is rule-restricted to
+   the pair's own ownerUid (see the Firestore rules handed over separately). This is what
+   lets resolveOwnerPair() figure out "which pair does this logged-in account belong to"
+   on every load, independent of the state/pairs document itself. */
+onSnapshot(collection(db, "pairAccounts"), function(qs){
+  STATE.pairAccounts = qs.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
+  STATE.loaded.pairAccounts = true;
+  resolveOwnerPair();
+  mount();
+}, function(){ STATE.loaded.pairAccounts = true; mount(); });
+
 onAuthStateChanged(auth, function(user){
   ui.unlocked = !!(user && user.email === ADMIN_EMAIL);
+  currentPlayerAuthUser = (user && user.email !== ADMIN_EMAIL) ? user : null;
+  resolveOwnerPair();
   if (ui.unlocked && !inscripcionesUnsub){
     inscripcionesUnsub = onSnapshot(collection(db, "inscripciones"), function(qs){
       STATE.inscripciones = qs.docs.map(function(d){

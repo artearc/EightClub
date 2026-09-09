@@ -127,6 +127,8 @@ input,textarea,select{font:inherit;color:inherit;}
 .header-lock:hover{color:var(--header-ink);transform:translateY(-1px);}
 .header-lock:active{box-shadow:var(--neu-pressed-sm);transform:translateY(0);}
 .header-lock .dot{width:6px;height:6px;border-radius:50%;background:var(--signal);flex-shrink:0;}
+.header-lock--player .dot{background:var(--danger);}
+.lock-label-short{display:none;}
 .mobile-menu-btn{display:none;flex-shrink:0;align-items:center;justify-content:center;width:2.3rem;height:2.3rem;background:linear-gradient(145deg, color-mix(in srgb, var(--bg-elevated) 100%, white 10%), color-mix(in srgb, var(--bg-elevated) 100%, black 4%));border:none;border-radius:var(--radius-small);color:var(--header-ink);font-size:1.1rem;cursor:pointer;box-shadow:var(--neu-raised-sm);}
 .mobile-menu-btn:active{box-shadow:var(--neu-pressed-sm);}
 .mobile-nav-panel{display:none;}
@@ -348,6 +350,8 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
   .header-logo .brand-mark{font-size:1.05rem;}
   .header-logo .brand-sub{display:none;}
   .header-lock span.lock-label{display:none;}
+  .header-lock{padding:.4rem .55rem;gap:.3rem;}
+  .lock-label-short{display:inline;font-size:.6rem;font-weight:600;letter-spacing:.03em;}
   .hero{margin:14px 14px 0;}
   .hero-num{top:-1.2rem;right:-1.2rem;font-size:min(58vw,46vh);}
   .insc-actions{flex-direction:column;align-items:stretch;}
