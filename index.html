@@ -701,12 +701,15 @@ function renderOrgRevisionesTab(){
 }
 function renderOrgParejasTab(){
   var rows = STATE.pairs.map(function(p){
-    var hasAccount = STATE.pairAccounts.some(function(a){ return a.id === p.id; });
+    var acc = STATE.pairAccounts.filter(function(a){ return a.id === p.id; })[0];
+    var hasAccount = !!acc;
     var pinInfo = hasAccount
-      ? "cuenta ya creada"
+      ? "cuenta ya creada · PIN de acompañante: <strong>"+(acc.companionPin?escHtml(acc.companionPin):"sin generar")+"</strong>"
       : "PIN de creación de cuenta: <strong>"+(p.pin?escHtml(p.pin):"sin generar")+"</strong>";
     return '<div class="org-row"><span class="grow"><strong>'+escHtml(p.j1)+' / '+escHtml(p.j2)+'</strong><small>'+escHtml(p.contacto||"sin contacto")+' · '+pinInfo+'</small></span>'
-      + (hasAccount ? "" : '<button class="btn btn-outline btn-sm" data-action="regenerate-pin" data-id="'+p.id+'" type="button">'+(p.pin?"Nuevo PIN":"Generar PIN")+'</button>')
+      + (hasAccount
+          ? '<button class="btn btn-outline btn-sm" data-action="org-generate-companion-pin" data-id="'+p.id+'" type="button">'+(acc.companionPin?"Nuevo PIN acompañante":"Generar PIN acompañante")+'</button>'
+          : '<button class="btn btn-outline btn-sm" data-action="regenerate-pin" data-id="'+p.id+'" type="button">'+(p.pin?"Nuevo PIN":"Generar PIN")+'</button>')
       + '<button class="btn btn-sm '+(p.confirmed?"btn-outline":"btn-ghost")+'" style="'+(p.confirmed?"":"border-color:var(--border);color:var(--ink-faint);")+'" data-action="toggle-confirmed" data-id="'+p.id+'" type="button">'+(p.confirmed?"Confirmada":"Marcar confirmada")+'</button>'
       + '<button class="btn btn-danger btn-sm" data-action="delete-pair" data-id="'+p.id+'" type="button">Eliminar</button></div>';
   }).join("");
@@ -1275,9 +1278,11 @@ function tryCompanionLogin(){
       try { localStorage.setItem("eightPlayerPairId", pairId); localStorage.setItem("eightPlayerIsOwner", "0"); } catch(e){}
       mount();
     });
-  }).catch(function(){
+  }).catch(function(err){
     ui.playerAuthBusy = false;
-    ui.playerAuthError = "No se pudo entrar. Comprueba tu conexión e inténtalo de nuevo.";
+    ui.playerAuthError = (err && err.code === "auth/admin-restricted-operation")
+      ? "El acceso de acompañante no está activado en el sistema todavía. Avisa al organizador."
+      : "No se pudo entrar. Comprueba tu conexión e inténtalo de nuevo.";
     mount();
   });
 }
@@ -1388,6 +1393,13 @@ function regeneratePin(id){
   if (!p) return;
   p.pin = String(Math.floor(1000 + Math.random() * 9000));
   saveStateDoc("pairs", { list: STATE.pairs });
+}
+function orgGenerateCompanionPin(pairId){
+  var newPin = String(Math.floor(100000 + Math.random() * 900000));
+  setSaving("Generando PIN de acompañante…");
+  updateDoc(doc(db, "pairAccounts", pairId), { companionPin: newPin, companionPinCreatedAt: serverTimestamp() })
+    .then(function(){ setSaveResult(true, "PIN de acompañante generado."); })
+    .catch(function(){ setSaveResult(false, "No se pudo generar el PIN."); });
 }
 function tryLogin(){
   var val = valOf("login-password-input");
@@ -1673,6 +1685,7 @@ document.addEventListener("click", function(e){
     case "accept-revision": acceptRevision(id); break;
     case "reject-revision": rejectRevision(id); break;
     case "regenerate-pin": regeneratePin(id); break;
+    case "org-generate-companion-pin": orgGenerateCompanionPin(id); break;
   }
 });
 document.addEventListener("keydown", function(e){
