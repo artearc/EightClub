@@ -319,9 +319,6 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 .save-status{font-size:.82rem;color:var(--ink-faint);margin-top:1rem;min-height:1.2em;}
 .save-status.ok{color:var(--signal);}
 .save-status.err{color:var(--danger);}
-.match-edit-row{display:grid;grid-template-columns:1fr auto auto auto auto;gap:.5rem;align-items:center;background:var(--bg);border-radius:var(--radius-medium);padding:.6rem .8rem;font-size:.85rem;margin-bottom:.5rem;}
-.match-edit-row input{width:3.6rem;text-align:center;padding:.4rem;border:1.5px solid rgba(55,61,32,.16);border-radius:var(--radius-inputs);background:var(--surface-input);color:var(--ink);}
-.match-edit-row input.marcador-input{width:8rem;border-radius:var(--radius-medium);}
 .round-block{border-radius:var(--radius-medium);background:var(--bg);padding:1.1rem;margin-bottom:1rem;}
 .round-block-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem;}
 .round-block-head h4{font-size:1.65rem;}
@@ -356,7 +353,6 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
   .insc-actions{flex-direction:column;align-items:stretch;}
   .match-row{grid-template-columns:1fr;text-align:left;gap:.2rem;}
   .match-row .vs{display:none;}
-  .match-edit-row{grid-template-columns:1fr 1fr;}
   /* cuadros as full-width slides — one round per "page", swipe to move between them,
      instead of the desktop peek-next-column layout which cuts the last round in half
      on a narrow screen */

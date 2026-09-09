@@ -523,7 +523,7 @@ function renderOrgLigaTab(){
   var confirmedPairs = STATE.pairs.filter(function(p){ return p.confirmed; });
   var head = '<p style="color:var(--ink-soft);font-size:.9rem;">'+confirmedPairs.length+' pareja'+(confirmedPairs.length===1?"":"s")+' confirmada'+(confirmedPairs.length===1?"":"s")+'.</p>'
     + '<button class="btn btn-outline btn-sm" style="margin-top:.7rem;" data-action="generate-fixture" type="button">'+(STATE.matches.length?"Regenerar calendario":"Generar calendario de liga")+'</button>'
-    + '<p style="color:var(--ink-faint);font-size:.82rem;margin-top:.8rem;">Escribe el marcador set a set (ej. "6-4, 6-3") en cada partido: además de mostrarse en la web, se usa para calcular la diferencia de juegos del desempate.</p>';
+    + '<p style="color:var(--ink-faint);font-size:.82rem;margin-top:.8rem;">Rellena el resultado set a set: el marcador y los sets ganados de cada pareja se calculan solos.</p>';
   if (!STATE.matches.length) return '<div>' + head + '</div>';
   var byJ = {};
   STATE.matches.forEach(function(m){ (byJ[m.jornada]=byJ[m.jornada]||[]).push(m); });
@@ -531,12 +531,20 @@ function renderOrgLigaTab(){
   var list = jornadas.map(function(j){
     return '<div style="margin-top:1rem;"><h4 style="font-family:var(--font-mono);font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint);margin-bottom:.5rem;">Jornada '+j+'</h4>'
       + byJ[j].map(function(m){
-          return '<div class="match-edit-row">'
-            + '<span>'+escHtml(pairLabel(m.pairA))+' vs '+escHtml(pairLabel(m.pairB))+'</span>'
-            + '<input id="match-setsA-'+m.id+'" type="text" inputmode="numeric" placeholder="A" value="'+(m.setsA===null?"":m.setsA)+'">'
-            + '<input id="match-setsB-'+m.id+'" type="text" inputmode="numeric" placeholder="B" value="'+(m.setsB===null?"":m.setsB)+'">'
-            + '<input id="match-marcador-'+m.id+'" class="marcador-input" type="text" placeholder="6-4, 6-3" value="'+escHtml(m.marcador)+'">'
-            + '<button class="btn btn-primary btn-sm" data-action="save-match" data-id="'+m.id+'" type="button">Guardar</button></div>';
+          var sets = m.sets || [];
+          var setsHtml = [1,2,3].map(function(n){
+            var s = sets[n-1] || {};
+            return '<span class="bm-set-label">Set '+n+'</span>'
+              + '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="match-s'+n+'a-'+m.id+'" placeholder="A" value="'+(s.a!=null?s.a:"")+'">'
+              + '<span class="bm-set-sep">–</span>'
+              + '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="match-s'+n+'b-'+m.id+'" placeholder="B" value="'+(s.b!=null?s.b:"")+'">';
+          }).join("");
+          return '<div class="bracket-edit-row">'
+            + '<div class="bracket-edit-teams">'+escHtml(pairLabel(m.pairA))+' <span class="vs">vs</span> '+escHtml(pairLabel(m.pairB))+'</div>'
+            + '<div class="bracket-edit-sets">'+setsHtml+'</div>'
+            + '<div class="bracket-edit-actions">'
+            +   '<button class="btn btn-primary btn-sm" data-action="save-match" data-id="'+m.id+'" type="button">Guardar</button>'
+            + '</div></div>';
         }).join("")
       + '</div>';
   }).join("");
@@ -1038,12 +1046,22 @@ function generateFixture(){
 function saveMatch(id){
   var m = STATE.matches.filter(function(x){ return x.id===id; })[0];
   if (!m) return;
-  var rawA = valOf("match-setsA-"+id), rawB = valOf("match-setsB-"+id), marcador = valOf("match-marcador-"+id);
-  if (rawA==="" && rawB===""){ m.setsA=null; m.setsB=null; m.played=false; m.marcador=marcador; }
-  else {
-    var sa = parseInt(rawA,10), sb = parseInt(rawB,10);
-    if (isNaN(sa) || isNaN(sb)){ alert("Introduce los sets ganados por cada pareja (números)."); return; }
-    m.setsA=sa; m.setsB=sb; m.played=true; m.marcador=marcador;
+  var sets = [];
+  for (var n = 1; n <= 3; n++){
+    var a = valOf("match-s"+n+"a-"+id), b = valOf("match-s"+n+"b-"+id);
+    if (a === "" && b === "") break;
+    var ga = parseInt(a, 10), gb = parseInt(b, 10);
+    if (a === "" || b === "" || isNaN(ga) || isNaN(gb)){ alert("Revisa el set "+n+": falta el marcador de una de las parejas."); return; }
+    sets.push({ a: ga, b: gb });
+  }
+  m.sets = sets;
+  m.marcador = sets.map(function(s){ return s.a + "-" + s.b; }).join(", ");
+  if (sets.length){
+    m.setsA = sets.filter(function(s){ return s.a > s.b; }).length;
+    m.setsB = sets.filter(function(s){ return s.b > s.a; }).length;
+    m.played = true;
+  } else {
+    m.setsA = null; m.setsB = null; m.played = false;
   }
   saveStateDoc("matches", { list: STATE.matches });
 }
