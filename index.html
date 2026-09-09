@@ -40,6 +40,9 @@ import {
 import {
   getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously, signOut, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  initializeAppCheck, ReCaptchaEnterpriseProvider
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js";
 
 /* ============================================================
    1) CONFIGURA AQUÍ TU PROYECTO FIREBASE
@@ -71,6 +74,16 @@ const DEFAULT_FAQS = [
   { id:"f6", q:"¿Dónde se juegan los partidos?", a:"En Padel Club Alicante Indoor. Tienes el mapa y cómo llegar en la sección Contacto." }
 ];
 const app = initializeApp(firebaseConfig);
+/* App Check: proves requests to Firestore come from this actual web page (rendered by a
+   real browser that can solve an invisible reCAPTCHA challenge), not a script hitting the
+   API directly — this is the anti-bot/anti-scraping layer the rate-limiting rules alone
+   can't provide. Site key is public by design (same as the Firebase config above); it
+   only becomes "Enforced" for Firestore once you flip that in Firebase Console → App
+   Check, after confirming in Monitor mode that real traffic isn't getting blocked. */
+initializeAppCheck(app, {
+  provider: new ReCaptchaEnterpriseProvider("6Le8MrItAAAAAAw9I0DJ0orunfYIYn47X3pZOr2j"),
+  isTokenAutoRefreshEnabled: true
+});
 const db = getFirestore(app);
 const auth = getAuth(app);
 
