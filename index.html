@@ -74,16 +74,19 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 
 const STATE = {
-  loaded: { info:false, pairs:false, matches:false, bracket:false, faqs:false },
+  loaded: { info:false, pairs:false, matches:false, bracket:false, faqs:false, revisiones:false },
   info: { categoria:"Quinta Masculina", sede:"Padel Club Alicante Indoor", fechas:"", precio:"", plazo:"", contacto: CONTACT_EMAIL },
   pairs: [],
   matches: [],
   bracket: [],
   faqs: DEFAULT_FAQS.slice(),
-  inscripciones: []
+  inscripciones: [],
+  revisiones: []
 };
 
-const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:"", saveType:"", loginError:false, mobileMenuOpen:false, authUser:null, openFaq:null, showBackTop:false, faqDeleteConfirm:null, solicitudesSubtab:"pendientes", clearHistoryConfirm:false };
+const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:"", saveType:"", loginError:false, mobileMenuOpen:false, authUser:null, openFaq:null, showBackTop:false, faqDeleteConfirm:null, solicitudesSubtab:"pendientes", clearHistoryConfirm:false,
+  playerModalOpen:false, playerPairId:null, playerPinError:false, playerSubmitMsg:"" };
+try { ui.playerPairId = localStorage.getItem("eightPlayerPairId") || null; } catch(e){}
 
 let inscripcionesUnsub = null;
 
@@ -218,6 +221,7 @@ function renderHeader(){
   return '<header class="site-header"><div class="header-inner">'
     + '<a href="#inicio" class="header-logo"><span class="brand-mark">EIGHT<span class="dot">.</span></span><span class="brand-sub">Club</span></a>'
     + '<nav class="header-nav">' + navLinks + '</nav>'
+    + '<button class="header-lock" data-action="open-player" type="button"><span class="dot"></span> <span class="lock-label">'+(ui.playerPairId ? "Mis partidos" : "Jugador")+'</span></button>'
     + '<button class="header-lock" data-action="open-organizer" type="button"><span class="dot"></span> <span class="lock-label">Organizador</span></button>'
     + '<button class="mobile-menu-btn" data-action="toggle-mobile-menu" type="button" aria-label="Abrir menú" aria-expanded="'+(ui.mobileMenuOpen?"true":"false")+'">'+(ui.mobileMenuOpen?"✕":"☰")+'</button>'
     + '</div>'
@@ -431,11 +435,93 @@ function renderFooter(){
     + '<p class="footer-legal"><a href="privacidad.html">Política de privacidad</a></p></footer>';
 }
 
+/* ---------- player panel ---------- */
+/* a player "logs in" with their pair's PIN (no real account/auth — same trust level as
+   the public inscripción form, just gated by a code only the organizer hands out) and
+   from there can submit a proposed result for one of their own matches. That submission
+   is never written straight into state/matches or state/bracket: it goes into the public
+   "revisiones" collection as its own doc with estado:"pendiente", and only an
+   organizer's accept-revision/reject-revision action (see below) ever touches the real
+   match data — mirroring exactly how public inscripciones already work. */
+function renderPlayerModal(){
+  if (!ui.playerModalOpen) return "";
+  var pair = ui.playerPairId ? pairById(ui.playerPairId) : null;
+  if (!pair){
+    return '<div class="modal-overlay" data-modal="player"><div class="modal-panel modal-panel--login">'
+      + '<div class="modal-header"><h2>Área de jugador</h2><button class="modal-close" data-action="close-player" type="button">✕</button></div>'
+      + '<div class="login-body">'
+      + '<p>Introduce el PIN de tu pareja para ver vuestros partidos y enviar resultados.</p>'
+      + '<div class="field"><input id="player-pin-input" type="text" inputmode="numeric" maxlength="4" placeholder="PIN" autocomplete="off"></div>'
+      + (ui.playerPinError ? '<p class="login-error">Ese PIN no corresponde a ninguna pareja.</p>' : "")
+      + '<button class="btn btn-primary" style="margin-top:1.2rem;width:100%;justify-content:center;" data-action="try-player-login" type="button">Entrar</button>'
+      + '</div></div></div>';
+  }
+  return renderPlayerDashboard(pair);
+}
+function renderPlayerDashboard(pair){
+  var label = pair.j1 + " / " + pair.j2;
+  var myLigaMatches = STATE.matches.filter(function(m){ return m.pairA===pair.id || m.pairB===pair.id; });
+  var myBracketMatches = [];
+  sortedRounds().forEach(function(r){
+    (r.matches||[]).forEach(function(m){
+      if (m.a === label || m.b === label) myBracketMatches.push({ round:r, match:m });
+    });
+  });
+  function revisionFor(tipo, matchId){
+    return STATE.revisiones.filter(function(rv){ return rv.pairId===pair.id && rv.tipo===tipo && rv.matchId===matchId; })
+      .sort(function(a,b){ return (b.creadoEnMs||0) - (a.creadoEnMs||0); })[0] || null;
+  }
+  var ligaHtml = myLigaMatches.length
+    ? myLigaMatches.map(function(m){
+        var mySide = m.pairA===pair.id ? "a" : "b";
+        var rival = pairLabel(mySide==="a" ? m.pairB : m.pairA);
+        return renderPlayerMatchRow(mySide, "liga", m.id, null, "Jornada "+m.jornada, rival, m.sets, revisionFor("liga", m.id));
+      }).join("")
+    : '<p class="loading-note">Todavía no tenéis partidos de liga.</p>';
+  var bracketHtml = myBracketMatches.map(function(o){
+    var mySide = o.match.a === label ? "a" : "b";
+    var rival = mySide==="a" ? o.match.b : o.match.a;
+    return renderPlayerMatchRow(mySide, "cuadro", o.match.id, o.round.id, o.round.name, rival, o.match.sets, revisionFor("cuadro", o.match.id));
+  }).join("");
+  return '<div class="modal-overlay" data-modal="player"><div class="modal-panel">'
+    + '<div class="modal-header"><h2>Hola, '+escHtml(pair.j1)+'</h2><button class="modal-close" data-action="close-player" type="button">✕</button></div>'
+    + '<div class="modal-body">'
+    + '<p style="color:var(--ink-soft);font-size:.9rem;">Pareja: <strong>'+escHtml(label)+'</strong></p>'
+    + (ui.playerSubmitMsg ? '<div class="status-banner">'+escHtml(ui.playerSubmitMsg)+'</div>' : "")
+    + '<h4 style="margin-top:1.2rem;">Liga</h4>' + ligaHtml
+    + (myBracketMatches.length ? '<h4 style="margin-top:1.4rem;">Cuadros</h4>' + bracketHtml : "")
+    + '<button class="btn btn-ghost" style="margin-top:1.4rem;border-color:var(--border);color:var(--ink-faint);" data-action="player-logout" type="button">Cerrar sesión</button>'
+    + '</div></div></div>';
+}
+function renderPlayerMatchRow(mySide, tipo, matchId, roundId, etiqueta, rival, sets, rev){
+  sets = sets || [];
+  var idBase = "pr-"+tipo+"-"+matchId;
+  if (rev && rev.estado === "pendiente"){
+    return '<div class="bracket-edit-row"><div class="bracket-edit-teams">'+escHtml(etiqueta)+' · vs '+escHtml(rival)+'</div>'
+      + '<span class="badge badge--pending">Enviado, pendiente de revisión</span></div>';
+  }
+  var setsHtml = [1,2,3].map(function(n){
+    var s = sets[n-1] || {};
+    var meVal = s.a==null ? "" : (mySide==="a" ? s.a : s.b);
+    var rivVal = s.a==null ? "" : (mySide==="a" ? s.b : s.a);
+    return '<span class="bm-set-label">Set '+n+'</span>'
+      + '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="'+idBase+'-s'+n+'me" placeholder="Vos." value="'+meVal+'">'
+      + '<span class="bm-set-sep">–</span>'
+      + '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="'+idBase+'-s'+n+'riv" placeholder="Riv." value="'+rivVal+'">';
+  }).join("");
+  return '<div class="bracket-edit-row">'
+    + '<div class="bracket-edit-teams">'+escHtml(etiqueta)+' <span class="vs">vs</span> '+escHtml(rival)+'</div>'
+    + (rev && rev.estado==="rechazada" ? '<p style="color:var(--danger);font-size:.8rem;margin-bottom:.5rem;">Vuestro envío anterior fue rechazado por el organizador — revisad el resultado y volved a enviarlo.</p>' : "")
+    + '<div class="bracket-edit-sets">'+setsHtml+'</div>'
+    + '<div class="bracket-edit-actions"><button class="btn btn-primary btn-sm" data-action="submit-player-result" data-tipo="'+tipo+'" data-id="'+matchId+'" data-round="'+(roundId||"")+'" type="button">Enviar resultado</button></div>'
+    + '</div>';
+}
+
 /* ---------- organizer ---------- */
 function renderOrganizer(){
   if (!ui.modalOpen) return "";
   if (!ui.unlocked){
-    return '<div class="modal-overlay"><div class="modal-panel modal-panel--login">'
+    return '<div class="modal-overlay" data-modal="organizer"><div class="modal-panel modal-panel--login">'
       + '<div class="modal-header"><h2>Acceso organizador</h2><button class="modal-close" data-action="close-organizer" type="button">✕</button></div>'
       + '<div class="login-body">'
       + '<p>Introduce la contraseña de organizador para editar la información, la liga, los cuadros y revisar solicitudes.</p>'
@@ -445,8 +531,9 @@ function renderOrganizer(){
       + '</div></div></div>';
   }
   var pendingCount = STATE.inscripciones.filter(function(r){ return r.status==="pending"; }).length;
-  var tabs = [["info","Información"],["solicitudes","Solicitudes"+(pendingCount?" ("+pendingCount+")":"")],["parejas","Parejas"],["liga","Liga"],["cuadros","Cuadros"],["faqs","FAQ"]];
-  return '<div class="modal-overlay"><div class="modal-panel">'
+  var pendingRevCount = STATE.revisiones.filter(function(r){ return r.estado==="pendiente"; }).length;
+  var tabs = [["info","Información"],["solicitudes","Solicitudes"+(pendingCount?" ("+pendingCount+")":"")],["parejas","Parejas"],["liga","Liga"],["cuadros","Cuadros"],["revisiones","Revisiones"+(pendingRevCount?" ("+pendingRevCount+")":"")],["faqs","FAQ"]];
+  return '<div class="modal-overlay" data-modal="organizer"><div class="modal-panel">'
     + '<div class="modal-header"><h2>Panel de organizador</h2><button class="modal-close" data-action="close-organizer" type="button">✕</button></div>'
     + '<div class="tabs">' + tabs.map(function(t){ return '<button class="tab-btn'+(ui.tab===t[0]?" active":"")+'" data-action="set-tab" data-tab="'+t[0]+'" type="button">'+t[1]+'</button>'; }).join("") + '</div>'
     + '<div class="modal-body">'
@@ -455,6 +542,7 @@ function renderOrganizer(){
     + (ui.tab==="parejas" ? renderOrgParejasTab() : "")
     + (ui.tab==="liga" ? renderOrgLigaTab() : "")
     + (ui.tab==="cuadros" ? renderOrgCuadrosTab() : "")
+    + (ui.tab==="revisiones" ? renderOrgRevisionesTab() : "")
     + (ui.tab==="faqs" ? renderOrgFaqTab() : "")
     + '<div class="save-status'+(ui.saveType?" "+ui.saveType:"")+'">'+escHtml(ui.saveMsg)+'</div>'
     + '<button class="btn btn-ghost" style="margin-top:.6rem;border-color:var(--border);color:var(--ink-faint);" data-action="relock" type="button">Cerrar sesión de organizador</button>'
@@ -505,9 +593,30 @@ function renderOrgSolicitudesTab(){
   }
   return subtabs + body;
 }
+function renderOrgRevisionesTab(){
+  if (!STATE.loaded.revisiones) return '<p class="loading-note">Cargando revisiones…</p>';
+  var pending = STATE.revisiones.filter(function(r){ return r.estado==="pendiente"; })
+    .sort(function(a,b){ return (a.creadoEnMs||0) - (b.creadoEnMs||0); });
+  if (!pending.length) return '<p style="color:var(--ink-faint);font-size:.9rem;">No hay resultados enviados por jugadores pendientes de revisar.</p>';
+  return '<div>' + pending.map(function(r){
+    var marcador = (r.sets||[]).map(function(s){ return s.a + "-" + s.b; }).join(", ");
+    var etiqueta = r.tipo === "liga" ? ("Liga · Jornada " + r.jornada) : "Cuadros";
+    return '<div class="req-row" style="flex-direction:column;align-items:stretch;">'
+      + '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:.5rem;align-items:center;">'
+      +   '<span><strong>'+escHtml(r.pairLabel)+'</strong> vs '+escHtml(r.rivalLabel)+'</span>'
+      +   '<span class="badge badge--pending">'+escHtml(etiqueta)+'</span>'
+      + '</div>'
+      + '<div style="font-family:var(--font-display);font-size:1.1rem;color:var(--signal);margin:.4rem 0;">'+escHtml(marcador)+'</div>'
+      + '<div style="display:flex;gap:.5rem;flex-wrap:wrap;">'
+      +   '<button class="btn btn-outline btn-sm" data-action="accept-revision" data-id="'+r.id+'" type="button">Aceptar</button>'
+      +   '<button class="btn btn-danger btn-sm" data-action="reject-revision" data-id="'+r.id+'" type="button">Rechazar</button>'
+      + '</div></div>';
+  }).join("") + '</div>';
+}
 function renderOrgParejasTab(){
   var rows = STATE.pairs.map(function(p){
-    return '<div class="org-row"><span class="grow"><strong>'+escHtml(p.j1)+' / '+escHtml(p.j2)+'</strong><small>'+escHtml(p.contacto||"sin contacto")+'</small></span>'
+    return '<div class="org-row"><span class="grow"><strong>'+escHtml(p.j1)+' / '+escHtml(p.j2)+'</strong><small>'+escHtml(p.contacto||"sin contacto")+' · PIN jugador: <strong>'+(p.pin?escHtml(p.pin):"sin generar")+'</strong></small></span>'
+      + '<button class="btn btn-outline btn-sm" data-action="regenerate-pin" data-id="'+p.id+'" type="button">'+(p.pin?"Nuevo PIN":"Generar PIN")+'</button>'
       + '<button class="btn btn-sm '+(p.confirmed?"btn-outline":"btn-ghost")+'" style="'+(p.confirmed?"":"border-color:var(--border);color:var(--ink-faint);")+'" data-action="toggle-confirmed" data-id="'+p.id+'" type="button">'+(p.confirmed?"Confirmada":"Marcar confirmada")+'</button>'
       + '<button class="btn btn-danger btn-sm" data-action="delete-pair" data-id="'+p.id+'" type="button">Eliminar</button></div>';
   }).join("");
@@ -620,7 +729,7 @@ function renderApp(){
   return renderHeader()
     + '<main>' + renderHero() + renderStats() + renderFormato() + renderInscripcion()
     + renderLiga() + renderCuadros() + renderFAQ() + renderContacto() + '</main>'
-    + renderFooter() + renderOrganizer();
+    + renderFooter() + renderOrganizer() + renderPlayerModal();
 }
 /* ============================================================
    Scroll-driven fx engine
@@ -986,6 +1095,99 @@ function wireInscripcionForm(){
 function openOrganizer(){ ui.modalOpen = true; ui.loginError = false; ui.solicitudesSubtab = "pendientes"; ui.clearHistoryConfirm = false; mount(); }
 function closeOrganizer(){ ui.modalOpen = false; ui.faqDeleteConfirm = null; mount(); }
 function relock(){ signOut(auth); ui.modalOpen = false; ui.faqDeleteConfirm = null; mount(); }
+
+function openPlayerModal(){ ui.playerModalOpen = true; ui.playerPinError = false; ui.playerSubmitMsg = ""; mount(); }
+function closePlayerModal(){ ui.playerModalOpen = false; mount(); }
+function tryPlayerLogin(){
+  var pin = valOf("player-pin-input");
+  var pair = STATE.pairs.filter(function(p){ return p.pin && p.pin === pin; })[0];
+  if (!pair){ ui.playerPinError = true; mount(); return; }
+  ui.playerPairId = pair.id;
+  ui.playerPinError = false;
+  try { localStorage.setItem("eightPlayerPairId", pair.id); } catch(e){}
+  mount();
+}
+function playerLogout(){
+  ui.playerPairId = null;
+  try { localStorage.removeItem("eightPlayerPairId"); } catch(e){}
+  mount();
+}
+function submitPlayerResult(tipo, matchId, roundId){
+  var pair = ui.playerPairId ? pairById(ui.playerPairId) : null;
+  if (!pair) return;
+  var label = pair.j1 + " / " + pair.j2;
+  var mySide, rivalLabel, jornada = null, m;
+  if (tipo === "liga"){
+    m = STATE.matches.filter(function(x){ return x.id===matchId; })[0];
+    if (!m){ alert("No se encontró el partido."); return; }
+    mySide = m.pairA === pair.id ? "a" : "b";
+    rivalLabel = pairLabel(mySide==="a" ? m.pairB : m.pairA);
+    jornada = m.jornada;
+  } else {
+    var round = STATE.bracket.filter(function(r){ return r.id===roundId; })[0];
+    m = round ? round.matches.filter(function(x){ return x.id===matchId; })[0] : null;
+    if (!m){ alert("No se encontró el partido."); return; }
+    mySide = m.a === label ? "a" : "b";
+    rivalLabel = mySide==="a" ? m.b : m.a;
+  }
+  var idBase = "pr-"+tipo+"-"+matchId;
+  var sets = [];
+  for (var n = 1; n <= 3; n++){
+    var meVal = valOf(idBase+"-s"+n+"me"), rivVal = valOf(idBase+"-s"+n+"riv");
+    if (meVal === "" && rivVal === "") break;
+    var gm = parseInt(meVal, 10), gr = parseInt(rivVal, 10);
+    if (meVal === "" || rivVal === "" || isNaN(gm) || isNaN(gr)){ alert("Revisa el set "+n+": falta algún marcador."); return; }
+    sets.push(mySide==="a" ? { a:gm, b:gr } : { a:gr, b:gm });
+  }
+  if (!sets.length){ alert("Introduce al menos el resultado de un set."); return; }
+  var btn = document.querySelector('[data-action="submit-player-result"][data-id="'+matchId+'"]');
+  if (btn){ btn.disabled = true; btn.textContent = "Enviando…"; }
+  addDoc(collection(db, "revisiones"), {
+    tipo: tipo, matchId: matchId, roundId: roundId || null, jornada: jornada,
+    pairId: pair.id, pairLabel: label, rivalLabel: rivalLabel,
+    sets: sets, estado: "pendiente", creadoEn: serverTimestamp()
+  }).then(function(){
+    ui.playerSubmitMsg = "Resultado enviado. El organizador lo revisará pronto.";
+    mount();
+  }).catch(function(){
+    alert("No se pudo enviar. Comprueba tu conexión e inténtalo de nuevo.");
+    if (btn){ btn.disabled = false; btn.textContent = "Enviar resultado"; }
+  });
+}
+function acceptRevision(id){
+  var r = STATE.revisiones.filter(function(x){ return x.id===id; })[0];
+  if (!r) return;
+  if (r.tipo === "liga"){
+    var m = STATE.matches.filter(function(x){ return x.id===r.matchId; })[0];
+    if (!m){ alert("No se encontró el partido de liga (puede que se haya eliminado)."); return; }
+    m.sets = r.sets;
+    m.marcador = r.sets.map(function(s){ return s.a + "-" + s.b; }).join(", ");
+    m.setsA = r.sets.filter(function(s){ return s.a > s.b; }).length;
+    m.setsB = r.sets.filter(function(s){ return s.b > s.a; }).length;
+    m.played = true;
+    saveStateDoc("matches", { list: STATE.matches });
+  } else {
+    var round = STATE.bracket.filter(function(x){ return x.id===r.roundId; })[0];
+    var bm = round ? round.matches.filter(function(x){ return x.id===r.matchId; })[0] : null;
+    if (!bm){ alert("No se encontró el partido del cuadro (puede que se haya eliminado)."); return; }
+    bm.sets = r.sets;
+    bm.resultado = r.sets.map(function(s){ return s.a + "-" + s.b; }).join(" / ");
+    var winsA = r.sets.filter(function(s){ return s.a > s.b; }).length;
+    var winsB = r.sets.filter(function(s){ return s.b > s.a; }).length;
+    bm.ganador = winsA > winsB ? bm.a : winsB > winsA ? bm.b : "";
+    saveStateDoc("bracket", { rounds: STATE.bracket });
+  }
+  updateDoc(doc(db, "revisiones", id), { estado: "aceptada" });
+}
+function rejectRevision(id){
+  updateDoc(doc(db, "revisiones", id), { estado: "rechazada" });
+}
+function regeneratePin(id){
+  var p = pairById(id);
+  if (!p) return;
+  p.pin = String(Math.floor(1000 + Math.random() * 9000));
+  saveStateDoc("pairs", { list: STATE.pairs });
+}
 function tryLogin(){
   var val = valOf("login-password-input");
   var btn = document.querySelector('[data-action="try-login"]');
@@ -1017,7 +1219,7 @@ function saveStateDoc(name, data){
 function addPair(){
   var j1 = valOf("new-pair-j1"), j2 = valOf("new-pair-j2"), contacto = valOf("new-pair-contacto");
   if (!j1 || !j2){ alert("Escribe los nombres de los dos jugadores."); return; }
-  STATE.pairs.push({ id: uid("p"), j1:j1, j2:j2, contacto:contacto, confirmed:true });
+  STATE.pairs.push({ id: uid("p"), j1:j1, j2:j2, contacto:contacto, confirmed:true, pin: String(Math.floor(1000 + Math.random() * 9000)) });
   saveStateDoc("pairs", { list: STATE.pairs });
 }
 function deletePair(id){
@@ -1211,7 +1413,10 @@ function rejectRequest(id){
 
 /* ---------- events ---------- */
 document.addEventListener("click", function(e){
-  if (e.target.classList && e.target.classList.contains("modal-overlay")){ closeOrganizer(); return; }
+  if (e.target.classList && e.target.classList.contains("modal-overlay")){
+    if (e.target.getAttribute("data-modal") === "player") closePlayerModal(); else closeOrganizer();
+    return;
+  }
   var el = e.target.closest("[data-action]");
   if (!el) return;
   var action = el.getAttribute("data-action");
@@ -1254,10 +1459,19 @@ document.addEventListener("click", function(e){
     case "delete-faq": askDeleteFaq(id); break;
     case "confirm-delete-faq": deleteFaq(id); break;
     case "cancel-delete-faq": cancelDeleteFaq(); break;
+    case "open-player": openPlayerModal(); break;
+    case "close-player": closePlayerModal(); break;
+    case "try-player-login": tryPlayerLogin(); break;
+    case "player-logout": playerLogout(); break;
+    case "submit-player-result": submitPlayerResult(el.getAttribute("data-tipo"), id, el.getAttribute("data-round") || null); break;
+    case "accept-revision": acceptRevision(id); break;
+    case "reject-revision": rejectRevision(id); break;
+    case "regenerate-pin": regeneratePin(id); break;
   }
 });
 document.addEventListener("keydown", function(e){
   if (e.key === "Enter" && e.target && e.target.id === "login-password-input") tryLogin();
+  if (e.key === "Enter" && e.target && e.target.id === "player-pin-input") tryPlayerLogin();
 });
 
 /* ---------- realtime subscriptions ---------- */
@@ -1285,6 +1499,19 @@ onSnapshot(doc(db,"state","faqs"), function(snap){
   if (snap.exists() && snap.data().list && snap.data().list.length) STATE.faqs = snap.data().list;
   STATE.loaded.faqs = true; mount();
 }, function(){ STATE.loaded.faqs = true; mount(); });
+
+/* public collection (like inscripciones' writes): anyone can create a revisión, but only
+   the organizer can accept/reject one — see acceptRevision/rejectRevision. Read publicly
+   (unlike inscripciones) so a logged-in player can see their own submission's status
+   without needing organizer auth; a revisión never holds anything more sensitive than a
+   set score, so that's a safe trade. */
+onSnapshot(collection(db, "revisiones"), function(qs){
+  STATE.revisiones = qs.docs.map(function(d){
+    var data = d.data();
+    return Object.assign({ id: d.id }, data, { creadoEnMs: data.creadoEn && data.creadoEn.toMillis ? data.creadoEn.toMillis() : 0 });
+  });
+  STATE.loaded.revisiones = true; mount();
+}, function(){ STATE.loaded.revisiones = true; mount(); });
 
 onAuthStateChanged(auth, function(user){
   ui.unlocked = !!(user && user.email === ADMIN_EMAIL);
