@@ -171,6 +171,11 @@ input,textarea,select{font:inherit;color:inherit;}
   transition:--hero-num-hot .6s var(--ease-out);
   transform:translateY(calc(var(--hero-p) * -80px * var(--hero-amp))) scale(calc((1 + var(--hero-p) * 0.24 * var(--hero-amp)) * (1 + var(--hero-num-hot) * 0.16))) rotate(calc(var(--hero-p) * 5deg * var(--hero-amp)));will-change:transform;}
 .hero-num.is-hot{--hero-num-hot:1;}
+/* the padel-player illustration mirrors the ghost "8" onto the opposite corner: same
+   scale and bleed-off-the-edge placement, just enough opacity to read as an illustration
+   rather than dissolve into the dot texture like the numeral does. */
+.hero-player-illustration{position:absolute;left:-3.5rem;bottom:-6.5rem;width:min(60vw,84vh);height:auto;opacity:.45;z-index:1;pointer-events:none;user-select:none;
+  transform:translateY(calc(var(--hero-p) * 80px * var(--hero-amp)));will-change:transform;}
 .hero-court{display:none;}
 .hero-eyebrow{font-family:var(--font-body);text-transform:uppercase;letter-spacing:.14em;font-size:.78rem;color:rgba(255,255,255,.85);font-weight:500;margin-bottom:1rem;}
 .hero-title{font-size:clamp(3.4rem,13vw,10.5rem);letter-spacing:.02em;color:var(--color-white);}
@@ -376,6 +381,7 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
   .lock-label-short{display:inline;font-size:.6rem;font-weight:600;letter-spacing:.03em;}
   .hero{margin:14px 14px 0;}
   .hero-num{top:-1.2rem;right:-1.2rem;font-size:min(58vw,46vh);}
+  .hero-player-illustration{bottom:-1.2rem;left:-1.2rem;width:min(58vw,46vh);}
   .insc-actions{flex-direction:column;align-items:stretch;}
   .match-row{grid-template-columns:1fr;text-align:left;gap:.2rem;}
   .match-row .vs{display:none;}
