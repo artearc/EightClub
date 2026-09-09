@@ -167,15 +167,10 @@ input,textarea,select{font:inherit;color:inherit;}
    CSS-transitioned smoothly on hover without also smoothing --hero-p — that one is
    JS-driven every scroll frame and must stay lag-free, so it's deliberately left out of
    the transition list below. */
-.hero-num{position:absolute;left:-3.5rem;top:-6.5rem;font-family:var(--font-display);font-weight:400;font-size:min(60vw,84vh);line-height:1;color:var(--color-white);opacity:.14;z-index:1;pointer-events:none;user-select:none;
+.hero-num{position:absolute;right:-3.5rem;top:-6.5rem;font-family:var(--font-display);font-weight:400;font-size:min(60vw,84vh);line-height:1;color:var(--color-white);opacity:.14;z-index:1;pointer-events:none;user-select:none;
   transition:--hero-num-hot .6s var(--ease-out);
-  transform:translateY(calc(var(--hero-p) * -80px * var(--hero-amp))) scale(calc((1 + var(--hero-p) * 0.24 * var(--hero-amp)) * (1 + var(--hero-num-hot) * 0.16))) rotate(calc(var(--hero-p) * -5deg * var(--hero-amp)));will-change:transform;}
+  transform:translateY(calc(var(--hero-p) * -80px * var(--hero-amp))) scale(calc((1 + var(--hero-p) * 0.24 * var(--hero-amp)) * (1 + var(--hero-num-hot) * 0.16))) rotate(calc(var(--hero-p) * 5deg * var(--hero-amp)));will-change:transform;}
 .hero-num.is-hot{--hero-num-hot:1;}
-/* small brand watermark tucked in the hero's bottom-right corner — just the bare
-   isotipo, no wordmark, sitting quietly above the stat cards below. */
-.hero-corner-mark{position:absolute;right:2.2rem;bottom:2.2rem;width:5.4rem;z-index:1;pointer-events:none;user-select:none;
-  transform:translateY(calc(var(--hero-p) * -30px * var(--hero-amp)));opacity:calc(.5 - var(--hero-p) * 0.3);will-change:transform,opacity;}
-.hero-corner-mark .isotipo{display:block;width:100%;height:auto;fill:var(--color-white);}
 .hero-court{display:none;}
 .hero-eyebrow{font-family:var(--font-body);text-transform:uppercase;letter-spacing:.14em;font-size:.78rem;color:rgba(255,255,255,.85);font-weight:500;margin-bottom:1rem;}
 .hero-title{font-size:clamp(3.4rem,13vw,10.5rem);letter-spacing:.02em;color:var(--color-white);}
@@ -307,9 +302,7 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 /* footer */
 .site-footer{background:var(--header-bg);color:var(--header-ink-soft);padding:3rem 0 2.2rem;position:relative;overflow:hidden;border-top:1.5px dotted rgba(55,61,32,.18);}
 .footer-inner{max-width:1080px;margin:0 auto;padding:0 1.5rem;display:flex;flex-wrap:wrap;justify-content:space-between;gap:1.6rem;align-items:flex-start;position:relative;z-index:1;}
-.footer-logo{display:flex;align-items:center;gap:.7rem;flex-shrink:0;}
-.footer-logo .logo-mark{display:block;height:2.4rem;width:auto;fill:var(--header-ink);}
-.footer-logo .brand-mark{font-size:1.6rem;}
+.footer-inner .brand-mark{font-size:1.6rem;}
 .footer-note{font-size:.85rem;max-width:34ch;}
 .footer-note strong{color:var(--header-ink);}
 .footer-copy{font-size:.78rem;color:var(--ink-faint);margin-top:1.6rem;text-align:center;position:relative;z-index:1;}
@@ -382,8 +375,7 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
   .header-lock{padding:.4rem .55rem;gap:.3rem;}
   .lock-label-short{display:inline;font-size:.6rem;font-weight:600;letter-spacing:.03em;}
   .hero{margin:14px 14px 0;}
-  .hero-num{top:-1.2rem;left:-1.2rem;font-size:min(58vw,46vh);}
-  .hero-corner-mark{width:3.6rem;right:1.2rem;bottom:1.2rem;}
+  .hero-num{top:-1.2rem;right:-1.2rem;font-size:min(58vw,46vh);}
   .insc-actions{flex-direction:column;align-items:stretch;}
   .match-row{grid-template-columns:1fr;text-align:left;gap:.2rem;}
   .match-row .vs{display:none;}
