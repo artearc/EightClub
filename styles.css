@@ -228,6 +228,14 @@ input,textarea,select{font:inherit;color:inherit;}
 .field input,.field textarea,.field select{border:1.5px solid rgba(55,61,32,.16);border-radius:var(--radius-medium);padding:.7rem .95rem;background:var(--surface-input);color:var(--ink);font-size:.95rem;transition:border-color .15s,background .15s;}
 .field input,.field select{border-radius:var(--radius-inputs);}
 .field input:focus,.field textarea:focus,.field select:focus{border-color:var(--signal);background:var(--signal-tint);}
+/* the "Ver"/"Ocultar" toggle sits inside the password pill itself, right-aligned; the
+   input is always the last child of .field--password with nothing after it, so anchoring
+   the button to the container's own bottom edge lines it up with the input in both the
+   labeled (player login/signup) and label-less (organizer login) variants. */
+.field--password{position:relative;}
+.field--password input{padding-right:3.6rem;}
+.password-toggle{position:absolute;right:.35rem;bottom:.3rem;background:transparent;border:none;color:var(--ink-faint);font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.03em;cursor:pointer;padding:.45rem .6rem;line-height:1;border-radius:var(--radius-pill);}
+.password-toggle:hover{color:var(--signal);}
 .form-hint{color:var(--ink-faint);font-size:.82rem;margin-top:1rem;}
 .insc-preview{font-family:var(--font-body);font-size:.8rem;resize:vertical;background:var(--bg-alt);min-height:6.5em;}
 .insc-actions{display:flex;gap:.7rem;flex-wrap:wrap;}

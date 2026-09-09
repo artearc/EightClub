@@ -234,6 +234,17 @@ function emptyState(big, text){
 function labeledInput(id,label,placeholder,value){
   return '<label class="field"><span>'+escHtml(label)+'</span><input id="'+id+'" type="text" placeholder="'+escHtml(placeholder||"")+'" value="'+escHtml(value||"")+'" autocomplete="off"></label>';
 }
+/* a password field with a "Ver"/"Ocultar" toggle — see the delegated click listener near
+   the other document-level ones, which just flips the input's own type attribute, so this
+   never needs rebinding across mount()'s re-renders. label is optional (the organizer
+   login field uses a placeholder instead, like it always has). */
+function passwordField(id, label, placeholder, autocomplete){
+  return '<div class="field field--password">'
+    + (label ? '<span>'+escHtml(label)+'</span>' : "")
+    + '<input id="'+id+'" type="password" placeholder="'+escHtml(placeholder||"")+'" autocomplete="'+autocomplete+'">'
+    + '<button type="button" class="password-toggle" data-target="'+id+'">Ver</button>'
+    + '</div>';
+}
 /* ---------- section renderers ---------- */
 var NAV_LINKS = [["#formato","Formato"],["#inscripcion","Inscripción"],["#liga","Liga"],["#cuadros","Cuadros"],["#faq","FAQ"],["#contacto","Contacto"]];
 function renderHeader(){
@@ -483,7 +494,7 @@ function renderPlayerModal(){
     body = '<p>Creáis la cuenta de vuestra pareja una sola vez, con el PIN que os dio el organizador.</p>'
       + '<div class="field"><span>PIN de la pareja</span><input id="player-claim-pin" type="text" inputmode="numeric" maxlength="4" autocomplete="off"></div>'
       + '<div class="field"><span>Email</span><input id="player-signup-email" type="email" autocomplete="off"></div>'
-      + '<div class="field"><span>Contraseña</span><input id="player-signup-password" type="password" autocomplete="new-password"></div>'
+      + passwordField("player-signup-password", "Contraseña", "", "new-password")
       + errHtml
       + '<button class="btn btn-primary" style="margin-top:1rem;width:100%;justify-content:center;" data-action="try-player-signup" type="button"'+(ui.playerAuthBusy?" disabled":"")+'>'+(ui.playerAuthBusy?"Creando…":"Crear cuenta")+'</button>';
   } else if (mode === "companion"){
@@ -494,7 +505,7 @@ function renderPlayerModal(){
   } else {
     body = '<p>Inicia sesión con la cuenta de vuestra pareja.</p>'
       + '<div class="field"><span>Email</span><input id="player-login-email" type="email" autocomplete="off"></div>'
-      + '<div class="field"><span>Contraseña</span><input id="player-login-password" type="password" autocomplete="current-password"></div>'
+      + passwordField("player-login-password", "Contraseña", "", "current-password")
       + errHtml
       + '<button class="btn btn-primary" style="margin-top:1rem;width:100%;justify-content:center;" data-action="try-player-login" type="button"'+(ui.playerAuthBusy?" disabled":"")+'>'+(ui.playerAuthBusy?"Entrando…":"Entrar")+'</button>';
   }
@@ -582,7 +593,7 @@ function renderOrganizer(){
       + '<div class="modal-header"><h2>Acceso organizador</h2><button class="modal-close" data-action="close-organizer" type="button">✕</button></div>'
       + '<div class="login-body">'
       + '<p>Introduce la contraseña de organizador para editar la información, la liga, los cuadros y revisar solicitudes.</p>'
-      + '<div class="field"><input id="login-password-input" type="password" placeholder="Contraseña" autocomplete="off"></div>'
+      + passwordField("login-password-input", null, "Contraseña", "off")
       + (ui.loginError ? '<p class="login-error">Contraseña incorrecta.</p>' : "")
       + '<button class="btn btn-primary" style="margin-top:1.2rem;width:100%;justify-content:center;" data-action="try-login" type="button">Entrar</button>'
       + '</div></div></div>';
@@ -1631,6 +1642,15 @@ document.addEventListener("keydown", function(e){
     case "player-signup-password": tryPlayerSignup(); break;
     case "player-companion-pin": tryCompanionLogin(); break;
   }
+});
+document.addEventListener("click", function(e){
+  var toggle = e.target.closest(".password-toggle");
+  if (!toggle) return;
+  var input = document.getElementById(toggle.getAttribute("data-target"));
+  if (!input) return;
+  var nowShowing = input.type === "password";
+  input.type = nowShowing ? "text" : "password";
+  toggle.textContent = nowShowing ? "Ocultar" : "Ver";
 });
 
 /* ---------- realtime subscriptions ---------- */
