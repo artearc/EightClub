@@ -280,7 +280,6 @@ function renderHero(){
     + '<line x1="40" y1="355" x2="760" y2="355" stroke="currentColor" stroke-width="2"/>'
     + '</svg>';
   return '<section class="hero'+animCls+'" id="inicio"><canvas class="hero-dots-canvas" aria-hidden="true"></canvas><span class="hero-num" aria-hidden="true">8</span>'
-    + '<img class="hero-player-illustration" src="img/padel-player.svg" alt="" aria-hidden="true">'
     + court
     + '<div class="hero-inner">'
     + '<p class="hero-eyebrow">Equipo 8 · Padel Club Alicante Indoor</p>'
@@ -304,8 +303,11 @@ function statTile(label, value, speed){
 }
 
 function renderFormato(){
-  return '<section id="formato" class="section"><div class="section-inner">'
+  return '<section id="formato" class="section">'
+    + '<img class="formato-player-illustration" src="img/padel-player.svg" alt="" aria-hidden="true">'
+    + '<div class="section-inner">'
     + '<span class="section-mark" aria-hidden="true">01</span>'
+    + '<div class="formato-content">'
     + '<p class="eyebrow">Formato</p>'
     + '<div class="formato-steps">'
     +   '<div class="formato-card fx-reveal"><div class="step-num">FASE 1</div><h3>Liga</h3><p>Todas las parejas confirmadas se enfrentan entre sí una vez. Los puntos de cada partido dependen del resultado — mira la tabla de puntuación aquí abajo.</p></div>'
@@ -329,7 +331,7 @@ function renderFormato(){
     +     '<li>Empate a 6 juegos (6-6) en un set: se decide con tie-break</li>'
     +   '</ul></div>'
     + '</div>'
-    + '</div></section>'
+    + '</div></div></section>'
     + renderCtaBand();
 }
 function renderCtaBand(){
@@ -442,7 +444,8 @@ function renderCuadros(){
       + '<div class="bracket">' + visibleRounds.map(function(r, ri){
       return '<div class="bracket-round"><h3>'+escHtml(r.name)+'</h3>'
         + r.matches.map(function(m, mi){
-            return '<div class="bracket-match fx-reveal">'
+            var tiltZ = mi % 2 === 0 ? -2.5 : 2;
+            return '<div class="bracket-match fx-reveal" data-tilt-z="'+tiltZ+'">'
               + '<div class="'+(m.ganador && m.ganador===m.a ? "winner":"")+'">'+escHtml(m.a)+'</div>'
               + '<div class="'+(m.ganador && m.ganador===m.b ? "winner":"")+'">'+escHtml(m.b)+'</div>'
               + (m.resultado ? '<div class="bracket-score">'+escHtml(m.resultado)+'</div>' : "")
@@ -452,11 +455,14 @@ function renderCuadros(){
     }).join("") + '</div>'
       + (multiRound ? '<div class="bracket-dots">' + visibleRounds.map(function(r, ri){ return '<span class="bracket-dot'+(ri===0?" active":"")+'"></span>'; }).join("") + '</div>' : "");
   }
-  return '<section id="cuadros" class="section section--alt"><div class="section-inner">'
+  return '<section id="cuadros" class="section section--alt">'
+    + '<img class="cuadros-player-illustration" src="img/padel-player-3.svg" alt="" aria-hidden="true">'
+    + '<div class="section-inner">'
     + '<span class="section-mark" aria-hidden="true">04</span>'
+    + '<div class="cuadros-content">'
     + '<p class="eyebrow">Cuadros</p><h2 class="section-title">Fase eliminatoria</h2>'
     + '<p class="section-lead">Tras la fase de liga, las parejas pasan a los cuadros eliminatorios hasta la final.</p>'
-    + body + '</div></section>';
+    + body + '</div></div></section>';
 }
 function renderContacto(){
   return '<section id="contacto" class="section"><div class="section-inner">'
@@ -908,9 +914,11 @@ function applyFx(){
     }
     var tiltX = parseFloat(el.dataset.tiltX) || 0;
     var tiltY = parseFloat(el.dataset.tiltY) || 0;
+    var tiltZ = parseFloat(el.dataset.tiltZ) || 0;
     el.style.opacity = p;
     el.style.transform = "perspective(900px) translateY(" + ((1 - p) * 26 * amp + drift).toFixed(1) + "px) scale(" + (0.97 + p * 0.03).toFixed(3) + ")"
-      + (tiltX || tiltY ? " rotateX(" + tiltX + "deg) rotateY(" + tiltY + "deg)" : "");
+      + (tiltX || tiltY ? " rotateX(" + tiltX + "deg) rotateY(" + tiltY + "deg)" : "")
+      + (tiltZ ? " rotate(" + tiltZ + "deg)" : "");
   });
 
   fx.parallax.forEach(function(el){
