@@ -399,9 +399,11 @@ function renderLiga(){
   }
   return '<section id="liga" class="section"><div class="section-inner">'
     + '<span class="section-mark" aria-hidden="true">03</span>'
-    + '<p class="eyebrow">Liga</p><h2 class="section-title">Clasificación</h2>'
-    + '<p class="section-lead">Todas las parejas confirmadas se enfrentan entre sí una vez. Los puntos y los criterios de desempate están detallados en <a href="#formato">Formato</a>.</p>'
-    + body + '</div></section>';
+    + '<div class="liga-layout">'
+    + '<div class="liga-head"><p class="eyebrow">Liga</p><h2 class="section-title">Clasificación</h2>'
+    + '<p class="section-lead">Todas las parejas confirmadas se enfrentan entre sí una vez. Los puntos y los criterios de desempate están detallados en <a href="#formato">Formato</a>.</p></div>'
+    + '<div class="liga-body">' + body + '</div>'
+    + '</div></div></section>';
 }
 function renderStandingsTable(rows){
   var body = rows.map(function(r, idx){
