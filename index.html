@@ -389,7 +389,7 @@ function renderInscripcion(){
 
 function renderLiga(){
   if (!STATE.loaded.pairs || !STATE.loaded.matches){
-    return '<section id="liga" class="section section--alt"><div class="section-inner"><p class="eyebrow">Liga</p><h2 class="section-title">Clasificación</h2><p class="loading-note">Cargando…</p></div></section>';
+    return '<section id="liga" class="section"><div class="section-inner"><p class="eyebrow">Liga</p><h2 class="section-title">Clasificación</h2><p class="loading-note">Cargando…</p></div></section>';
   }
   var confirmedPairs = STATE.pairs.filter(function(p){ return p.confirmed; });
   var body;
@@ -400,13 +400,11 @@ function renderLiga(){
   } else {
     body = renderStandingsTable(computeStandings()) + renderMatchesByJornada();
   }
-  return '<section id="liga" class="section section--alt"><div class="section-inner">'
+  return '<section id="liga" class="section"><div class="section-inner">'
     + '<span class="section-mark" aria-hidden="true">03</span>'
-    + '<div class="liga-layout">'
-    + '<div class="liga-head"><p class="eyebrow">Liga</p><h2 class="section-title">Clasificación</h2>'
-    + '<p class="section-lead">Todas las parejas confirmadas se enfrentan entre sí una vez. Los puntos y los criterios de desempate están detallados en <a href="#formato">Formato</a>.</p></div>'
-    + '<div class="liga-body">' + body + '</div>'
-    + '</div></div></section>';
+    + '<p class="eyebrow">Liga</p><h2 class="section-title">Clasificación</h2>'
+    + '<p class="section-lead">Todas las parejas confirmadas se enfrentan entre sí una vez. Los puntos y los criterios de desempate están detallados en <a href="#formato">Formato</a>.</p>'
+    + body + '</div></section>';
 }
 function renderStandingsTable(rows){
   var body = rows.map(function(r, idx){
