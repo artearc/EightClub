@@ -111,6 +111,11 @@ input,textarea,select{font:inherit;color:inherit;}
    ball, reused as a running index (01, 02…) behind each section's heading so the page
    reads as one designed sequence instead of a stack of identical generic blocks */
 .section-mark{position:absolute;left:1.5rem;top:-.6rem;z-index:-1;font-family:var(--font-display);font-weight:400;font-size:clamp(4rem,11vw,8.5rem);line-height:1;color:var(--ink);opacity:.055;letter-spacing:0;user-select:none;pointer-events:none;}
+/* same treatment as the hero's padel-player illustration (partial opacity, blends with
+   the section instead of sitting on top of it) — grounded at the bottom-right, facing
+   left toward the sign-up form. */
+.insc-player-illustration{position:absolute;right:1.5rem;bottom:0;width:min(30vw,380px);height:auto;opacity:.45;z-index:0;pointer-events:none;user-select:none;}
+@media (max-width:900px){ .insc-player-illustration{display:none;} }
 
 /* header */
 .site-header{position:sticky;top:0;z-index:40;padding:.9rem 0;background:transparent;}

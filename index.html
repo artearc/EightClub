@@ -356,13 +356,17 @@ function renderFAQ(){
 function renderInscripcion(){
   var i = STATE.info;
   if (ui.inscripcionSent){
-    return '<section id="inscripcion" class="section section--alt"><div class="section-inner">'
+    return '<section id="inscripcion" class="section section--alt">'
+      + '<img class="insc-player-illustration" src="img/padel-player-2.svg" alt="" aria-hidden="true">'
+      + '<div class="section-inner">'
       + '<span class="section-mark" aria-hidden="true">02</span>'
       + '<p class="eyebrow">Inscripción</p><h2 class="section-title">Apúntate con tu pareja</h2>'
       + '<div class="insc-success"><div class="big">¡Solicitud enviada! <span class="dot-accent">·</span></div><p>La hemos registrado. Os confirmaremos la plaza por email o teléfono en cuanto la revisemos.</p></div>'
       + '</div></section>';
   }
-  return '<section id="inscripcion" class="section section--alt"><div class="section-inner">'
+  return '<section id="inscripcion" class="section section--alt">'
+    + '<img class="insc-player-illustration" src="img/padel-player-2.svg" alt="" aria-hidden="true">'
+    + '<div class="section-inner">'
     + '<span class="section-mark" aria-hidden="true">02</span>'
     + '<p class="eyebrow">Inscripción</p><h2 class="section-title">Apúntate con tu pareja</h2>'
     + '<p class="section-lead">Precio: <strong>'+escHtml(i.precio||"Próximamente")+'</strong> · Plazo: <strong>'+escHtml(i.plazo||"Próximamente")+'</strong>. Rellena los datos y os avisamos en cuanto confirmemos la plaza.</p>'
