@@ -252,9 +252,10 @@ var NAV_LINKS = [["#formato","Formato"],["#inscripcion","Inscripción"],["#liga"
    coordinates). The only change from the original file is dropping its hardcoded
    fill:rgb(0,0,0) so the path inherits whatever `fill` the CSS sets on .isotipo instead
    of always rendering pure black. */
+var ISOTIPO_D = "M 21.00 550.24 C 21.00 549.83 22.91 548.32 25.25 546.89 C 27.59 545.46 38.20 538.81 48.83 532.11 C 113.91 491.12 239.63 414.90 393.00 323.48 C 416.14 309.69 476.57 274.27 479.95 272.53 C 482.52 271.20 493.05 271.00 561.95 271.00 C 605.43 271.00 641.00 271.34 641.00 271.76 C 641.00 272.17 639.09 273.69 636.75 275.12 C 576.91 311.75 531.61 340.34 464.00 384.13 C 367.59 446.58 346.14 460.61 278.18 505.69 L 209.86 551.00 L 115.43 551.00 C 63.49 551.00 21.00 550.66 21.00 550.24 Z M 277.03 550.25 C 277.07 549.00 433.61 445.59 459.52 429.69 L 465.55 426.00 L 714.29 426.25 L 963.04 426.50 L 935.29 445.50 C 920.03 455.95 887.51 478.42 863.02 495.43 C 838.53 512.44 810.44 531.90 800.60 538.68 L 782.70 551.00 L 529.85 551.00 C 390.78 551.00 277.01 550.66 277.03 550.25 Z M 527.01 388.25 C 527.04 385.72 608.58 335.20 679.00 294.07 L 718.50 271.00 L 820.69 271.00 C 876.90 271.00 923.09 271.34 923.34 271.75 C 923.59 272.16 912.71 279.45 899.15 287.94 C 885.59 296.44 845.03 322.13 809.00 345.04 C 772.97 367.94 742.52 387.21 741.32 387.84 C 738.82 389.17 526.99 389.57 527.01 388.25 Z";
 function isotipoSvg(){
   return '<svg class="isotipo" viewBox="0 0 1024 819" aria-hidden="true" focusable="false">'
-    + '<path d="M 21.00 550.24 C 21.00 549.83 22.91 548.32 25.25 546.89 C 27.59 545.46 38.20 538.81 48.83 532.11 C 113.91 491.12 239.63 414.90 393.00 323.48 C 416.14 309.69 476.57 274.27 479.95 272.53 C 482.52 271.20 493.05 271.00 561.95 271.00 C 605.43 271.00 641.00 271.34 641.00 271.76 C 641.00 272.17 639.09 273.69 636.75 275.12 C 576.91 311.75 531.61 340.34 464.00 384.13 C 367.59 446.58 346.14 460.61 278.18 505.69 L 209.86 551.00 L 115.43 551.00 C 63.49 551.00 21.00 550.66 21.00 550.24 Z M 277.03 550.25 C 277.07 549.00 433.61 445.59 459.52 429.69 L 465.55 426.00 L 714.29 426.25 L 963.04 426.50 L 935.29 445.50 C 920.03 455.95 887.51 478.42 863.02 495.43 C 838.53 512.44 810.44 531.90 800.60 538.68 L 782.70 551.00 L 529.85 551.00 C 390.78 551.00 277.01 550.66 277.03 550.25 Z M 527.01 388.25 C 527.04 385.72 608.58 335.20 679.00 294.07 L 718.50 271.00 L 820.69 271.00 C 876.90 271.00 923.09 271.34 923.34 271.75 C 923.59 272.16 912.71 279.45 899.15 287.94 C 885.59 296.44 845.03 322.13 809.00 345.04 C 772.97 367.94 742.52 387.21 741.32 387.84 C 738.82 389.17 526.99 389.57 527.01 388.25 Z"/>'
+    + '<path d="'+ISOTIPO_D+'"/>'
     + '</svg>';
 }
 function renderHeader(){
@@ -421,10 +422,14 @@ function renderMatchesByJornada(){
     return '<div class="jornada fx-reveal"><h3>Jornada '+j+'</h3><ul class="match-list">' + byJ[j].map(renderMatchRow).join("") + '</ul></div>';
   }).join("") + '</div>';
 }
+function shareIconSvg(){
+  return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v14"/></svg>';
+}
 function renderMatchRow(m){
   var labelA = pairLabel(m.pairA), labelB = pairLabel(m.pairB), scoreHtml;
   if (m.played){
-    scoreHtml = '<span class="score">'+m.setsA+'-'+m.setsB+'</span>' + (m.marcador ? '<span class="marcador-detalle">'+escHtml(m.marcador)+'</span>' : "");
+    scoreHtml = '<span class="score">'+m.setsA+'-'+m.setsB+'</span>' + (m.marcador ? '<span class="marcador-detalle">'+escHtml(m.marcador)+'</span>' : "")
+      + '<button class="share-btn" data-action="share-result" data-tipo="liga" data-id="'+m.id+'" type="button" aria-label="Compartir resultado" title="Compartir resultado">'+shareIconSvg()+'</button>';
   } else {
     scoreHtml = '<span class="badge badge--pending">Pendiente</span>';
   }
@@ -432,7 +437,7 @@ function renderMatchRow(m){
     + '<span class="'+(m.played && m.setsA>m.setsB ? "winner":"")+'">'+escHtml(labelA)+'</span>'
     + '<span class="vs">vs</span>'
     + '<span class="'+(m.played && m.setsB>m.setsA ? "winner":"")+'">'+escHtml(labelB)+'</span>'
-    + scoreHtml + '</li>';
+    + '<span class="match-result">'+scoreHtml+'</span></li>';
 }
 function renderCuadros(){
   if (!STATE.loaded.bracket){
@@ -445,11 +450,12 @@ function renderCuadros(){
   } else {
     var multiRound = visibleRounds.length > 1;
     body = (multiRound ? '<p class="bracket-swipe-hint">Desliza para ver más rondas →</p>' : "")
-      + '<div class="bracket">' + visibleRounds.map(function(r, ri){
+      + '<div class="bracket'+(multiRound?" bracket--tree":"")+'">' + visibleRounds.map(function(r, ri){
       return '<div class="bracket-round"><h3>'+escHtml(r.name)+'</h3>'
         + r.matches.map(function(m, mi){
-            var tiltZ = mi % 2 === 0 ? -1.3 : 1;
-            return '<div class="bracket-match fx-reveal" data-tilt-z="'+tiltZ+'">'
+            var tiltZ = multiRound ? 0 : (mi % 2 === 0 ? -1.3 : 1);
+            return '<div class="bracket-match fx-reveal"'+(tiltZ?' data-tilt-z="'+tiltZ+'"':"")+'>'
+              + (m.resultado ? '<button class="share-btn" data-action="share-result" data-tipo="cuadro" data-id="'+m.id+'" data-round="'+r.id+'" type="button" aria-label="Compartir resultado" title="Compartir resultado">'+shareIconSvg()+'</button>' : "")
               + '<div class="'+(m.ganador && m.ganador===m.a ? "winner":"")+'">'+escHtml(m.a)+'</div>'
               + '<div class="'+(m.ganador && m.ganador===m.b ? "winner":"")+'">'+escHtml(m.b)+'</div>'
               + (m.resultado ? '<div class="bracket-score">'+escHtml(m.resultado)+'</div>' : "")
@@ -894,6 +900,7 @@ function collectFx(){
   applyHeroNumHot();
   bracketDotsSetup();
   applyFx();
+  layoutBracketConnectors();
 }
 
 function applyFx(){
@@ -1150,10 +1157,72 @@ function bracketDotsSetup(){
   }, { passive:true });
 }
 
+/* tournament-tree connector lines for Cuadros (bracket--tree, 2+ rounds) — plain
+   absolutely-positioned divs rather than svg, so this is just getBoundingClientRect
+   arithmetic. Assumes match i,i+1 of round r feed match floor(i/2) of round r+1, which
+   is how the organizer naturally enters rounds top-to-bottom. Recomputed on scroll/resize
+   (not inside applyFx itself, which also fires on unrelated card-tilt mousemoves) since
+   the fx-reveal entrance transform shifts card positions while it settles in. */
+function layoutBracketConnectors(){
+  var bracket = document.querySelector(".bracket.bracket--tree");
+  var old = document.querySelector(".bracket-connectors");
+  if (!bracket || window.innerWidth < 641){
+    if (old) old.innerHTML = "";
+    return;
+  }
+  var wrap = old;
+  if (!wrap){
+    wrap = document.createElement("div");
+    wrap.className = "bracket-connectors";
+    wrap.setAttribute("aria-hidden", "true");
+    bracket.insertBefore(wrap, bracket.firstChild);
+  }
+  var rounds = Array.prototype.slice.call(bracket.querySelectorAll(".bracket-round"));
+  if (rounds.length < 2){ wrap.innerHTML = ""; return; }
+  wrap.style.width = bracket.scrollWidth + "px";
+  wrap.style.height = bracket.scrollHeight + "px";
+  var bracketRect = bracket.getBoundingClientRect();
+  var originX = bracketRect.left - bracket.scrollLeft;
+  var originY = bracketRect.top - bracket.scrollTop;
+  var html = [];
+  function addH(x, y, w){ if (w <= 0) return; html.push('<span class="bconn-h" style="left:'+x.toFixed(1)+'px;top:'+(y-1).toFixed(1)+'px;width:'+w.toFixed(1)+'px;"></span>'); }
+  function addV(x, y, h){ if (h <= 0) return; html.push('<span class="bconn-v" style="left:'+(x-1).toFixed(1)+'px;top:'+y.toFixed(1)+'px;height:'+h.toFixed(1)+'px;"></span>'); }
+  for (var r = 0; r < rounds.length - 1; r++){
+    var matches = Array.prototype.slice.call(rounds[r].querySelectorAll(".bracket-match"));
+    var nextMatches = Array.prototype.slice.call(rounds[r+1].querySelectorAll(".bracket-match"));
+    var roundGap = rounds[r+1].getBoundingClientRect().left - rounds[r].getBoundingClientRect().right;
+    for (var i = 0; i < nextMatches.length; i++){
+      var a = matches[i*2], b = matches[i*2+1], next = nextMatches[i];
+      if (!next || (!a && !b)) continue;
+      var nextRect = next.getBoundingClientRect();
+      var nextY = nextRect.top + nextRect.height/2 - originY;
+      var nextX = nextRect.left - originX;
+      var midX = null, ys = [];
+      [a,b].forEach(function(m){
+        if (!m) return;
+        var mr = m.getBoundingClientRect();
+        var mY = mr.top + mr.height/2 - originY;
+        var mRightX = mr.right - originX;
+        midX = mRightX + roundGap/2;
+        ys.push(mY);
+        addH(mRightX, mY, midX - mRightX);
+      });
+      if (midX == null) continue;
+      if (ys.length === 2){
+        addV(midX, Math.min(ys[0], ys[1]), Math.abs(ys[1]-ys[0]));
+        addH(midX, (ys[0]+ys[1])/2, nextX - midX);
+      } else {
+        addH(midX, ys[0], nextX - midX);
+      }
+    }
+  }
+  wrap.innerHTML = html.join("");
+}
+
 function onScrollFx(){
   if (fxTicking) return;
   fxTicking = true;
-  requestAnimationFrame(function(){ applyFx(); fxTicking = false; });
+  requestAnimationFrame(function(){ applyFx(); layoutBracketConnectors(); fxTicking = false; });
 }
 window.addEventListener("scroll", onScrollFx, { passive:true });
 window.addEventListener("resize", onScrollFx);
@@ -1381,6 +1450,115 @@ function submitPlayerResult(tipo, matchId, roundId){
       ? "Estás enviando resultados demasiado rápido. Espera un momento e inténtalo de nuevo."
       : "No se pudo enviar. Comprueba tu conexión e inténtalo de nuevo.");
     if (btn){ btn.disabled = false; btn.textContent = "Enviar resultado"; }
+  });
+}
+/* ---------- shareable result card ---------- */
+/* Renders a branded 1080x1080 PNG for one played match (liga or cuadro) client-side —
+   no server round-trip, just canvas — then hands it to the Web Share API on phones
+   (straight into WhatsApp/Instagram) or falls back to a plain download on desktop. */
+function getShareInfo(tipo, id, roundId){
+  if (tipo === "liga"){
+    var m = STATE.matches.filter(function(x){ return x.id === id; })[0];
+    if (!m || !m.played) return null;
+    return {
+      context: "Jornada " + m.jornada,
+      labelA: pairLabel(m.pairA), labelB: pairLabel(m.pairB),
+      scoreText: m.marcador || (m.setsA + "-" + m.setsB),
+      winner: m.setsA > m.setsB ? pairLabel(m.pairA) : pairLabel(m.pairB)
+    };
+  }
+  if (tipo === "cuadro"){
+    var round = STATE.bracket.filter(function(r){ return r.id === roundId; })[0];
+    var m2 = round && round.matches.filter(function(x){ return x.id === id; })[0];
+    if (!m2 || !m2.resultado) return null;
+    return { context: round.name, labelA: m2.a, labelB: m2.b, scoreText: m2.resultado, winner: m2.ganador || null };
+  }
+  return null;
+}
+function fitCanvasText(ctx, text, maxWidth, startSize, weight, family){
+  var size = startSize;
+  do {
+    ctx.font = weight + " " + size + "px " + family;
+    size -= 2;
+  } while (ctx.measureText(text).width > maxWidth && size > 26);
+  return ctx.font;
+}
+function drawResultCard(info){
+  return (document.fonts ? document.fonts.ready : Promise.resolve()).then(function(){
+    var W = 1080, H = 1080;
+    var canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    var ctx = canvas.getContext("2d");
+
+    var grad = ctx.createLinearGradient(0, 0, W, H);
+    grad.addColorStop(0, "#c1592c");
+    grad.addColorStop(1, "#373d20");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = "rgba(255,255,255,.08)";
+    for (var y = 40; y < H - 20; y += 36){
+      for (var x = 40; x < W - 20; x += 36){
+        ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    ctx.save();
+    ctx.translate(80, 64);
+    var isoScale = 84 / 819;
+    ctx.scale(isoScale, isoScale);
+    ctx.translate(-21, -246);
+    ctx.fillStyle = "rgba(255,255,255,.92)";
+    ctx.fill(new Path2D(ISOTIPO_D));
+    ctx.restore();
+
+    ctx.fillStyle = "rgba(255,255,255,.92)";
+    ctx.font = "700 34px 'DM Sans', sans-serif";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("EIGHT. CLUB", 190, 128);
+
+    ctx.fillStyle = "rgba(255,255,255,.65)";
+    ctx.font = "600 28px 'DM Sans', sans-serif";
+    ctx.fillText(info.context.toUpperCase(), 80, 280);
+
+    var maxW = W - 160;
+    var isAWinner = info.winner && info.winner === info.labelA;
+    var isBWinner = info.winner && info.winner === info.labelB;
+    ctx.font = fitCanvasText(ctx, info.labelA, maxW, 68, 400, "'Getla','Anton',sans-serif");
+    ctx.fillStyle = isAWinner ? "#ffffff" : "rgba(255,255,255,.55)";
+    ctx.fillText(info.labelA, 80, 420);
+    ctx.font = fitCanvasText(ctx, info.labelB, maxW, 68, 400, "'Getla','Anton',sans-serif");
+    ctx.fillStyle = isBWinner ? "#ffffff" : "rgba(255,255,255,.55)";
+    ctx.fillText(info.labelB, 80, 500);
+
+    ctx.font = fitCanvasText(ctx, info.scoreText, maxW, 128, 400, "'Getla','Anton',sans-serif");
+    ctx.fillStyle = "#e8e1cc";
+    ctx.fillText(info.scoreText, 80, 680);
+
+    ctx.font = "500 26px 'DM Sans', sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,.6)";
+    ctx.fillText("Padel Club Alicante Indoor", 80, H - 76);
+
+    return new Promise(function(resolve){ canvas.toBlob(resolve, "image/png"); });
+  });
+}
+function shareResult(tipo, id, roundId){
+  var info = getShareInfo(tipo, id, roundId);
+  if (!info){ alert("Este partido todavía no tiene resultado."); return; }
+  drawResultCard(info).then(function(blob){
+    if (!blob) return;
+    var fileName = "eight-club-" + info.labelA.replace(/\s+/g,"-").toLowerCase() + "-vs-" + info.labelB.replace(/\s+/g,"-").toLowerCase() + ".png";
+    var file = null;
+    try { file = new File([blob], fileName, { type: "image/png" }); } catch(e){}
+    if (navigator.share && file && navigator.canShare && navigator.canShare({ files:[file] })){
+      navigator.share({ files:[file], title:"EIGHT. Club", text: info.labelA + " " + info.scoreText + " " + info.labelB }).catch(function(){});
+      return;
+    }
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = fileName;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
   });
 }
 function acceptRevision(id){
@@ -1711,6 +1889,7 @@ document.addEventListener("click", function(e){
     case "generate-companion-pin": generateCompanionPin(); break;
     case "player-logout": playerLogout(); break;
     case "submit-player-result": submitPlayerResult(el.getAttribute("data-tipo"), id, el.getAttribute("data-round") || null); break;
+    case "share-result": shareResult(el.getAttribute("data-tipo"), id, el.getAttribute("data-round") || null); break;
     case "accept-revision": acceptRevision(id); break;
     case "reject-revision": rejectRevision(id); break;
     case "regenerate-pin": regeneratePin(id); break;
