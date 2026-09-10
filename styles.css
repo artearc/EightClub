@@ -140,9 +140,9 @@ input,textarea,select{font:inherit;color:inherit;}
    instead of sitting behind the heading, title/lead stay narrow next to it, and the
    table (or empty state) takes the rest on the right. */
 .liga-head{margin-bottom:0;}
-.liga-mark{font-family:var(--font-display);font-weight:400;font-size:clamp(4rem,11vw,8.5rem);line-height:1;color:var(--ink);opacity:.12;user-select:none;pointer-events:none;align-self:end;}
+.liga-mark{font-family:var(--font-display);font-weight:400;font-size:clamp(4rem,11vw,8.5rem);line-height:1;color:var(--ink);opacity:.12;user-select:none;pointer-events:none;align-self:start;margin-top:-.6rem;}
 @media (min-width:851px){
-  .liga-layout{display:grid;grid-template-columns:auto minmax(220px,300px) 1fr;gap:7rem;align-items:start;}
+  .liga-layout{display:grid;grid-template-columns:auto minmax(220px,300px) 1fr;gap:10rem;align-items:start;}
 }
 
 /* header */
