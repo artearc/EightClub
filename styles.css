@@ -467,9 +467,18 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 .cta-band .btn-primary{background:linear-gradient(145deg, color-mix(in srgb, var(--color-dark-olive) 100%, white 12%), color-mix(in srgb, var(--color-dark-olive) 100%, black 8%));color:var(--color-white);box-shadow:9px 9px 20px rgba(0,0,0,.32),-9px -9px 20px rgba(255,255,255,.12);}
 .cta-band .btn-primary:active{box-shadow:inset 5px 5px 12px rgba(0,0,0,.34),inset -5px -5px 12px rgba(255,255,255,.1);}
 
-/* faq */
-.faq-list{margin-top:1.8rem;display:flex;flex-direction:column;gap:.7rem;}
-.faq-item{background:var(--bg-elevated);border-radius:var(--radius-medium);overflow:hidden;}
+/* faq — fifth illustration, mirrored onto the right like Inscripción's (content stays
+   put on the left, ghost "05" moves over to sit with the illustration instead of hiding
+   behind the heading). The question bars get the same alternating-tilt carousel treatment
+   as the bracket matches, via the same fx-reveal data-tilt-z hookup (a plain CSS transform
+   here would just get overwritten by that scroll-driven inline style). */
+.faq-player-illustration{position:absolute;right:1.5rem;bottom:0;width:min(38vw,700px);height:auto;opacity:.45;z-index:0;pointer-events:none;user-select:none;transform:scaleX(-1);}
+@media (max-width:900px){ .faq-player-illustration{display:none;} }
+#faq .section-mark{left:auto;right:1.5rem;}
+#faq .section-inner{position:relative;z-index:1;}
+.faq-list{margin-top:1.8rem;display:flex;flex-direction:column;gap:1rem;max-width:640px;}
+.faq-item{background:var(--bg-elevated);border-radius:var(--radius-medium);overflow:hidden;box-shadow:0 8px 18px rgba(55,61,32,.14);transition:box-shadow .25s var(--ease-out);}
+.faq-item:hover{box-shadow:0 14px 26px rgba(55,61,32,.2);}
 .faq-q{width:100%;text-align:left;background:transparent;border:none;padding:1.1rem 1.4rem;font-size:1.02rem;color:var(--ink);display:flex;justify-content:space-between;align-items:center;gap:1rem;cursor:pointer;font-family:var(--font-body);font-weight:500;}
 .faq-icon{color:var(--signal);font-size:1.1rem;flex-shrink:0;transition:transform .25s var(--ease-out);}
 .faq-q[aria-expanded="true"] .faq-icon{transform:rotate(180deg);}

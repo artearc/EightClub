@@ -341,14 +341,17 @@ function renderCtaBand(){
     + '</div></div>';
 }
 function renderFAQ(){
-  var rows = STATE.faqs.map(function(f){
+  var rows = STATE.faqs.map(function(f, fi){
     var open = ui.openFaq === f.id;
-    return '<div class="faq-item fx-reveal">'
+    var tiltZ = fi % 2 === 0 ? -2 : 1.6;
+    return '<div class="faq-item fx-reveal" data-tilt-z="'+tiltZ+'">'
       + '<button class="faq-q" data-action="toggle-faq" data-id="'+f.id+'" type="button" aria-expanded="'+(open?"true":"false")+'">'+escHtml(f.q)+'<span class="faq-icon">'+(open?"−":"+")+'</span></button>'
       + (open ? '<div class="faq-a"><p>'+escHtml(f.a)+'</p></div>' : "")
       + '</div>';
   }).join("");
-  return '<section id="faq" class="section"><div class="section-inner">'
+  return '<section id="faq" class="section">'
+    + '<img class="faq-player-illustration" src="img/padel-player-4.png" alt="" aria-hidden="true">'
+    + '<div class="section-inner">'
     + '<span class="section-mark" aria-hidden="true">05</span>'
     + '<p class="eyebrow">Preguntas frecuentes</p><h2 class="section-title">¿Tienes dudas?</h2>'
     + '<div class="faq-list">' + rows + '</div>'
