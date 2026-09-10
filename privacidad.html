@@ -28,6 +28,7 @@
 </style>
 </head>
 <body>
+<div id="cursor-dot" aria-hidden="true"></div>
 <header class="site-header"><div class="header-inner">
   <a href="index.html" class="header-logo"><span class="brand-mark">EIGHT<span class="dot">.</span></span><span class="brand-sub">Club</span></a>
   <nav class="header-nav"><a href="index.html">Volver a EIGHT.</a></nav>
@@ -49,16 +50,23 @@
     <li>Nombre y apellidos de los dos jugadores de la pareja.</li>
     <li>Un teléfono o email de contacto para confirmar la plaza.</li>
   </ul>
+  <p>Si la pareja crea una cuenta de jugador para consultar y actualizar sus propios partidos, se recogen además:</p>
+  <ul>
+    <li>El email y la contraseña de la cuenta (gestionados por Firebase Authentication; nunca almacenamos la contraseña en texto plano ni tenemos acceso a ella).</li>
+    <li>Los resultados de partido que la pareja envía para revisión, junto con la fecha del envío.</li>
+  </ul>
+  <p>Esa misma cuenta puede generar un PIN para que el otro miembro de la pareja acceda sin necesidad de conocer la contraseña compartida; ese acceso queda vinculado a la cuenta de la pareja, no crea un usuario ni unos datos personales adicionales.</p>
   <p>No se recogen datos de pago, ni datos especialmente protegidos, ni se usan cookies de seguimiento o analítica en esta web.</p>
 
   <h2>¿Para qué se usan?</h2>
-  <p>Estos datos se usan únicamente para gestionar la inscripción, organizar la liga y los cuadros de EIGHT., y contactar con los jugadores por temas relacionados con el torneo (confirmación de plaza, calendario, resultados, avisos puntuales).</p>
+  <p>Estos datos se usan únicamente para gestionar la inscripción, organizar la liga y los cuadros de EIGHT., dar acceso a cada pareja a sus propios partidos, y contactar con los jugadores por temas relacionados con el torneo (confirmación de plaza, calendario, resultados, avisos puntuales). Los resultados que una pareja envía desde su cuenta no se publican directamente: quedan pendientes de revisión y solo se reflejan en la clasificación o el cuadro cuando el organizador los confirma.</p>
 
   <h2>¿Dónde se almacenan?</h2>
-  <p>Los datos se guardan en Firebase (Firestore), un servicio de Google Cloud. El acceso a las solicitudes de inscripción y a los datos de contacto está restringido únicamente a la cuenta del organizador de EIGHT.; el resto de visitantes de la web solo ven la información pública del torneo (clasificación, calendario y cuadros), nunca los datos de contacto de otras parejas.</p>
+  <p>Los datos se guardan en Firebase (Firestore y Authentication), un servicio de Google Cloud. El acceso a las solicitudes de inscripción, a los datos de contacto y a las cuentas de jugador está restringido a la propia pareja (solo puede ver y modificar sus datos) y a la cuenta del organizador de EIGHT.; el resto de visitantes de la web solo ven la información pública del torneo (clasificación, calendario y cuadros), nunca los datos de contacto ni las cuentas de otras parejas.</p>
+  <p>Para evitar abusos (por ejemplo, envíos automatizados o masivos), la web limita cuántas veces puede una cuenta enviar un resultado en poco tiempo, y usa Google reCAPTCHA Enterprise para distinguir el tráfico humano del automatizado. reCAPTCHA analiza señales técnicas del dispositivo y la navegación para este fin; su uso está sujeto a la <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">política de privacidad de Google</a>.</p>
 
   <h2>¿Se comparten con terceros?</h2>
-  <p>No. Los datos no se venden, ceden ni comparten con terceros, más allá de la infraestructura técnica necesaria para alojar la web y la base de datos (GitHub Pages y Firebase/Google Cloud).</p>
+  <p>No se venden ni ceden datos a terceros con fines comerciales. Se usan los siguientes proveedores como infraestructura técnica necesaria para alojar y proteger la web y la base de datos: GitHub Pages, Firebase/Google Cloud (Firestore y Authentication) y Google reCAPTCHA Enterprise.</p>
 
   <h2>¿Cuánto tiempo se conservan?</h2>
   <p>Los datos se conservan mientras sean necesarios para la edición del torneo en curso y la organización de futuras ediciones de EIGHT. Puedes pedir que se eliminen en cualquier momento.</p>
@@ -72,5 +80,23 @@
   <p class="footer-note"><strong>EIGHT.</strong> es el circuito de pádel nacido del Equipo 8 en Padel Club Alicante Indoor.</p>
 </div><p class="footer-copy">EIGHT. Club · Equipo 8 · Padel Club Alicante Indoor</p>
 <p class="footer-legal"><a href="index.html">Volver a la web</a></p></footer>
+<script>
+var cursorDotEl = document.getElementById("cursor-dot");
+var CURSOR_CLICKABLE = "a, button, input, select, textarea, label";
+if (cursorDotEl){
+  document.addEventListener("pointermove", function(e){
+    if (e.pointerType && e.pointerType !== "mouse") return;
+    cursorDotEl.style.transform = "translate(" + e.clientX + "px," + e.clientY + "px)";
+  });
+  document.addEventListener("pointerover", function(e){
+    if (e.target.closest && e.target.closest(CURSOR_CLICKABLE)) cursorDotEl.classList.add("is-active");
+  });
+  document.addEventListener("pointerout", function(e){
+    var leavingClickable = e.target.closest && e.target.closest(CURSOR_CLICKABLE);
+    var enteringClickable = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(CURSOR_CLICKABLE);
+    if (leavingClickable && !enteringClickable) cursorDotEl.classList.remove("is-active");
+  });
+}
+</script>
 </body>
 </html>
