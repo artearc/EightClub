@@ -114,7 +114,7 @@ input,textarea,select{font:inherit;color:inherit;}
 /* same treatment as the hero's padel-player illustration (partial opacity, blends with
    the section instead of sitting on top of it) — grounded at the bottom-right, facing
    left toward the sign-up form. */
-.insc-player-illustration{position:absolute;right:1.5rem;bottom:0;width:min(30vw,380px);height:auto;opacity:.45;z-index:0;pointer-events:none;user-select:none;}
+.insc-player-illustration{position:absolute;right:1.5rem;bottom:0;width:min(40vw,620px);height:auto;opacity:.45;z-index:0;pointer-events:none;user-select:none;transform:scaleX(-1);}
 @media (max-width:900px){ .insc-player-illustration{display:none;} }
 
 /* header */
