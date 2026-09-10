@@ -186,7 +186,7 @@ input,textarea,select{font:inherit;color:inherit;}
    are drifting also swell near the cursor — one set of dots, not a static layer plus a
    separate reactive one drawn on top of it. */
 .hero-dots-canvas{position:absolute;inset:0;pointer-events:none;z-index:0;}
-.hero-inner{max-width:1080px;margin:0;padding:0 1.5rem;position:relative;z-index:2;
+.hero-inner{max-width:1080px;margin-left:min(7vw,120px);padding:0 1.5rem;position:relative;z-index:2;
   transform:translateY(calc(var(--hero-p) * -34px * var(--hero-amp)));opacity:calc(1 - var(--hero-p) * 0.6);will-change:transform,opacity;}
 /* --hero-num-hot is a registered (animatable) custom property so its own change can be
    CSS-transitioned smoothly on hover without also smoothing --hero-p — that one is
