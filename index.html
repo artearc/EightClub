@@ -343,7 +343,7 @@ function renderCtaBand(){
 function renderFAQ(){
   var rows = STATE.faqs.map(function(f, fi){
     var open = ui.openFaq === f.id;
-    var tiltZ = fi % 2 === 0 ? -2 : 1.6;
+    var tiltZ = fi % 2 === 0 ? -0.9 : 0.7;
     return '<div class="faq-item fx-reveal" data-tilt-z="'+tiltZ+'">'
       + '<button class="faq-q" data-action="toggle-faq" data-id="'+f.id+'" type="button" aria-expanded="'+(open?"true":"false")+'">'+escHtml(f.q)+'<span class="faq-icon">'+(open?"−":"+")+'</span></button>'
       + (open ? '<div class="faq-a"><p>'+escHtml(f.a)+'</p></div>' : "")
@@ -449,7 +449,7 @@ function renderCuadros(){
       + '<div class="bracket">' + visibleRounds.map(function(r, ri){
       return '<div class="bracket-round"><h3>'+escHtml(r.name)+'</h3>'
         + r.matches.map(function(m, mi){
-            var tiltZ = mi % 2 === 0 ? -2.5 : 2;
+            var tiltZ = mi % 2 === 0 ? -1.3 : 1;
             return '<div class="bracket-match fx-reveal" data-tilt-z="'+tiltZ+'">'
               + '<div class="'+(m.ganador && m.ganador===m.a ? "winner":"")+'">'+escHtml(m.a)+'</div>'
               + '<div class="'+(m.ganador && m.ganador===m.b ? "winner":"")+'">'+escHtml(m.b)+'</div>'
