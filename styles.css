@@ -128,11 +128,13 @@ input,textarea,select{font:inherit;color:inherit;}
 @media (min-width:901px){ .cuadros-content{margin-left:min(34vw,420px);} }
 /* fourth illustration — moved here from the hero, which felt empty carrying a whole
    figure while this section carried none. Same left/number-pairing recipe as Cuadros,
-   just a lighter content push since Formato's card grids need more breathing room. */
-.formato-player-illustration{position:absolute;left:1.5rem;bottom:0;width:min(34vw,600px);height:auto;opacity:.45;z-index:0;pointer-events:none;user-select:none;}
+   but a narrower push: the rules grid needs to keep its 3-column row, otherwise it
+   wraps to an extra row and drags the section (and the bottom-anchored illustration
+   with it) much taller than Cuadros' compact one ever gets. */
+.formato-player-illustration{position:absolute;left:1.5rem;bottom:0;width:min(24vw,420px);height:auto;opacity:.45;z-index:0;pointer-events:none;user-select:none;}
 @media (max-width:900px){ .formato-player-illustration{display:none;} }
 .formato-content{position:relative;z-index:1;}
-@media (min-width:901px){ .formato-content{margin-left:min(26vw,340px);} }
+@media (min-width:901px){ .formato-content{margin-left:min(18vw,230px);} }
 
 /* header */
 .site-header{position:sticky;top:0;z-index:40;padding:.9rem 0;background:transparent;}
