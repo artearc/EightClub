@@ -127,11 +127,12 @@ input,textarea,select{font:inherit;color:inherit;}
 .cuadros-content{position:relative;z-index:1;}
 @media (min-width:901px){ .cuadros-content{margin-left:min(34vw,420px);} }
 /* fourth illustration — moved here from the hero, which felt empty carrying a whole
-   figure while this section carried none. Same left/number-pairing recipe as Cuadros,
-   but a narrower push: the rules grid needs to keep its 3-column row, otherwise it
-   wraps to an extra row and drags the section (and the bottom-anchored illustration
-   with it) much taller than Cuadros' compact one ever gets. */
-.formato-player-illustration{position:absolute;left:1.5rem;bottom:0;width:min(24vw,420px);height:auto;opacity:.45;z-index:0;pointer-events:none;user-select:none;}
+   figure while this section carried none. Same left/number-pairing recipe (and now the
+   same big scale) as Cuadros/Inscripción — it's sized wider than the content push on
+   purpose, same as the other two, so it reads as a background figure bleeding in behind
+   the cards rather than something the layout has to make literal room for. The push
+   itself stays narrow (below) so the rules grid keeps its 3-column row. */
+.formato-player-illustration{position:absolute;left:1.5rem;bottom:0;width:min(36vw,660px);height:auto;opacity:.45;z-index:0;pointer-events:none;user-select:none;}
 @media (max-width:900px){ .formato-player-illustration{display:none;} }
 .formato-content{position:relative;z-index:1;}
 @media (min-width:901px){ .formato-content{margin-left:min(18vw,230px);} }
