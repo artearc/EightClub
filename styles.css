@@ -132,7 +132,7 @@ input,textarea,select{font:inherit;color:inherit;}
    purpose, same as the other two, so it reads as a background figure bleeding in behind
    the cards rather than something the layout has to make literal room for. The push
    itself stays narrow (below) so the rules grid keeps its 3-column row. */
-.formato-player-illustration{position:absolute;left:1.5rem;bottom:0;width:min(36vw,660px);height:auto;opacity:.45;z-index:0;pointer-events:none;user-select:none;}
+.formato-player-illustration{position:absolute;left:4rem;bottom:0;width:min(40vw,730px);height:auto;opacity:.45;z-index:0;pointer-events:none;user-select:none;}
 @media (max-width:900px){ .formato-player-illustration{display:none;} }
 .formato-content{position:relative;z-index:1;}
 @media (min-width:901px){ .formato-content{margin-left:min(18vw,230px);} }
