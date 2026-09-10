@@ -401,8 +401,8 @@ function renderLiga(){
     body = renderStandingsTable(computeStandings()) + renderMatchesByJornada();
   }
   return '<section id="liga" class="section section--alt"><div class="section-inner">'
+    + '<span class="section-mark" aria-hidden="true">03</span>'
     + '<div class="liga-layout">'
-    + '<span class="liga-mark" aria-hidden="true">03</span>'
     + '<div class="liga-head"><p class="eyebrow">Liga</p><h2 class="section-title">Clasificación</h2>'
     + '<p class="section-lead">Todas las parejas confirmadas se enfrentan entre sí una vez. Los puntos y los criterios de desempate están detallados en <a href="#formato">Formato</a>.</p></div>'
     + '<div class="liga-body">' + body + '</div>'
