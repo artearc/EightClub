@@ -136,11 +136,13 @@ input,textarea,select{font:inherit;color:inherit;}
 @media (max-width:900px){ .formato-player-illustration{display:none;} }
 .formato-content{position:relative;z-index:1;}
 @media (min-width:901px){ .formato-content{margin-left:min(18vw,230px);} }
-/* Liga: no illustration here, just a plain two-column split — title/lead stay narrow
-   and pinned on the left, the table (or empty state) takes the rest on the right. */
+/* Liga: no illustration here, just a plain layout — the ghost "03" gets its own column
+   instead of sitting behind the heading, title/lead stay narrow next to it, and the
+   table (or empty state) takes the rest on the right. */
 .liga-head{margin-bottom:0;}
+.liga-mark{font-family:var(--font-display);font-weight:400;font-size:clamp(3rem,6vw,5rem);line-height:1;color:var(--ink);opacity:.12;user-select:none;pointer-events:none;}
 @media (min-width:851px){
-  .liga-layout{display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:2.8rem;align-items:start;}
+  .liga-layout{display:grid;grid-template-columns:auto minmax(220px,300px) 1fr;gap:2rem;align-items:start;}
 }
 
 /* header */
