@@ -412,9 +412,10 @@ function renderStandingsTable(rows){
   }).join("");
   return '<div class="table-wrap"><table class="standings"><thead><tr><th>#</th><th>Pareja</th><th>PJ</th><th>PG</th><th>PP</th><th>Sets</th><th>Dif sets</th><th>Dif juegos</th><th>Pts</th></tr></thead><tbody>'+body+'</tbody></table></div>';
 }
+function matchPairsExist(m){ return !!pairById(m.pairA) && !!pairById(m.pairB); }
 function renderMatchesByJornada(){
   var byJ = {};
-  STATE.matches.forEach(function(m){ (byJ[m.jornada]=byJ[m.jornada]||[]).push(m); });
+  STATE.matches.filter(matchPairsExist).forEach(function(m){ (byJ[m.jornada]=byJ[m.jornada]||[]).push(m); });
   var jornadas = Object.keys(byJ).map(Number).sort(function(a,b){return a-b;});
   return '<div class="jornadas">' + jornadas.map(function(j){
     return '<div class="jornada fx-reveal"><h3>Jornada '+j+'</h3><ul class="match-list">' + byJ[j].map(renderMatchRow).join("") + '</ul></div>';
@@ -738,11 +739,17 @@ function renderOrgParejasTab(){
 function renderOrgLigaTab(){
   var confirmedPairs = STATE.pairs.filter(function(p){ return p.confirmed; });
   var head = '<p style="color:var(--ink-soft);font-size:.9rem;">'+confirmedPairs.length+' pareja'+(confirmedPairs.length===1?"":"s")+' confirmada'+(confirmedPairs.length===1?"":"s")+'.</p>'
-    + '<button class="btn btn-outline btn-sm" style="margin-top:.7rem;" data-action="generate-fixture" type="button">'+(STATE.matches.length?"Regenerar calendario":"Generar calendario de liga")+'</button>'
-    + '<p style="color:var(--ink-faint);font-size:.82rem;margin-top:.8rem;">Rellena el resultado set a set: el marcador y los sets ganados de cada pareja se calculan solos.</p>';
+    + '<div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.7rem;">'
+    +   '<button class="btn btn-outline btn-sm" data-action="generate-fixture" type="button">'+(STATE.matches.length?"Regenerar calendario":"Generar calendario de liga")+'</button>'
+    +   (STATE.matches.length ? '<button class="btn btn-danger btn-sm" data-action="clear-fixture" type="button">Vaciar calendario</button>' : "")
+    + '</div>'
+    + '<p style="color:var(--ink-faint);font-size:.82rem;margin-top:.8rem;">Rellena el resultado set a set: el marcador y los sets ganados de cada pareja se calculan solos. Regenerar crea un calendario nuevo con las parejas confirmadas actuales; vaciar borra el calendario entero.</p>';
   if (!STATE.matches.length) return '<div>' + head + '</div>';
   var byJ = {};
-  STATE.matches.forEach(function(m){ (byJ[m.jornada]=byJ[m.jornada]||[]).push(m); });
+  STATE.matches.filter(matchPairsExist).forEach(function(m){ (byJ[m.jornada]=byJ[m.jornada]||[]).push(m); });
+  if (!Object.keys(byJ).length){
+    return '<div>' + head + '<p class="loading-note" style="margin-top:1rem;">Todos los partidos del calendario actual pertenecen a parejas que ya no existen. Regenera o vacía el calendario.</p></div>';
+  }
   var jornadas = Object.keys(byJ).map(Number).sort(function(a,b){return a-b;});
   var list = jornadas.map(function(j){
     return '<div style="margin-top:1rem;"><h4 style="font-family:var(--font-mono);font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint);margin-bottom:.5rem;">Jornada '+j+'</h4>'
@@ -1474,6 +1481,11 @@ function generateFixture(){
   STATE.matches = matches;
   saveStateDoc("matches", { list: STATE.matches });
 }
+function clearFixture(){
+  if (!confirm("Esto borra todo el calendario de liga y los resultados introducidos. ¿Continuar?")) return;
+  STATE.matches = [];
+  saveStateDoc("matches", { list: STATE.matches });
+}
 function saveMatch(id){
   var m = STATE.matches.filter(function(x){ return x.id===id; })[0];
   if (!m) return;
@@ -1673,6 +1685,7 @@ document.addEventListener("click", function(e){
     case "delete-pair": deletePair(id); break;
     case "toggle-confirmed": toggleConfirmed(id); break;
     case "generate-fixture": generateFixture(); break;
+    case "clear-fixture": clearFixture(); break;
     case "save-match": saveMatch(id); break;
     case "save-info": saveInfo(); break;
     case "add-round": addRound(); break;
