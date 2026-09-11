@@ -899,8 +899,8 @@ function collectFx(){
   heroDotsSetup();
   applyHeroNumHot();
   bracketDotsSetup();
-  applyFx();
   layoutBracketConnectors();
+  applyFx();
 }
 
 function applyFx(){
@@ -932,8 +932,9 @@ function applyFx(){
     var tiltX = parseFloat(el.dataset.tiltX) || 0;
     var tiltY = parseFloat(el.dataset.tiltY) || 0;
     var tiltZ = parseFloat(el.dataset.tiltZ) || 0;
+    var treeY = parseFloat(el.dataset.treeY) || 0;
     el.style.opacity = p;
-    el.style.transform = "perspective(900px) translateY(" + ((1 - p) * 26 * amp + drift).toFixed(1) + "px) scale(" + (0.97 + p * 0.03).toFixed(3) + ")"
+    el.style.transform = "perspective(900px) translateY(" + ((1 - p) * 26 * amp + drift + treeY).toFixed(1) + "px) scale(" + (0.97 + p * 0.03).toFixed(3) + ")"
       + (tiltX || tiltY ? " rotateX(" + tiltX + "deg) rotateY(" + tiltY + "deg)" : "")
       + (tiltZ ? " rotate(" + tiltZ + "deg)" : "");
   });
@@ -1195,7 +1196,8 @@ function layoutBracketConnectors(){
       var a = matches[i*2], b = matches[i*2+1], next = nextMatches[i];
       if (!next || (!a && !b)) continue;
       var nextRect = next.getBoundingClientRect();
-      var nextY = nextRect.top + nextRect.height/2 - originY;
+      var prevTreeY = parseFloat(next.dataset.treeY) || 0;
+      var nextY = nextRect.top + nextRect.height/2 - originY - prevTreeY;
       var nextX = nextRect.left - originX;
       var midX = null, ys = [];
       [a,b].forEach(function(m){
@@ -1209,8 +1211,10 @@ function layoutBracketConnectors(){
       });
       if (midX == null) continue;
       if (ys.length === 2){
+        var targetY = (ys[0]+ys[1])/2;
+        next.dataset.treeY = (targetY - nextY).toFixed(1);
         addV(midX, Math.min(ys[0], ys[1]), Math.abs(ys[1]-ys[0]));
-        addH(midX, (ys[0]+ys[1])/2, nextX - midX);
+        addH(midX, targetY, nextX - midX);
       } else {
         addH(midX, ys[0], nextX - midX);
       }
@@ -1222,7 +1226,7 @@ function layoutBracketConnectors(){
 function onScrollFx(){
   if (fxTicking) return;
   fxTicking = true;
-  requestAnimationFrame(function(){ applyFx(); layoutBracketConnectors(); fxTicking = false; });
+  requestAnimationFrame(function(){ layoutBracketConnectors(); applyFx(); fxTicking = false; });
 }
 window.addEventListener("scroll", onScrollFx, { passive:true });
 window.addEventListener("resize", onScrollFx);
