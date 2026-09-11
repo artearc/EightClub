@@ -1503,19 +1503,35 @@ function drawResultCard(info){
       }
     }
 
+    /* ghost "8", bleeding off the right edge at the hero's own scale/opacity — drawn
+       before the content so the header/score sit legibly on top of it. */
     ctx.save();
-    ctx.translate(80, 64);
-    var isoScale = 84 / 819;
+    ctx.font = "400 1100px 'Getla','Anton',sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,.14)";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    ctx.fillText("8", W - 130, H / 2 + 40);
+    ctx.restore();
+
+    /* isotipo + wordmark share one vertical center instead of two different baselines. */
+    var headerY = 118;
+    var isoH = 58, isoScale = isoH / 819;
+    var isoW = 1024 * isoScale;
+    var isoLeft = 80;
+    ctx.save();
+    ctx.translate(isoLeft + isoW / 2, headerY);
     ctx.scale(isoScale, isoScale);
-    ctx.translate(-21, -246);
+    ctx.translate(-512, -409.5);
     ctx.fillStyle = "rgba(255,255,255,.92)";
     ctx.fill(new Path2D(ISOTIPO_D));
     ctx.restore();
 
     ctx.fillStyle = "rgba(255,255,255,.92)";
     ctx.font = "700 34px 'DM Sans', sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText("EIGHT. CLUB", isoLeft + isoW + 24, headerY);
     ctx.textBaseline = "alphabetic";
-    ctx.fillText("EIGHT. CLUB", 190, 128);
 
     ctx.fillStyle = "rgba(255,255,255,.65)";
     ctx.font = "600 28px 'DM Sans', sans-serif";
@@ -1535,10 +1551,6 @@ function drawResultCard(info){
     ctx.fillStyle = "#e8e1cc";
     ctx.fillText(info.scoreText, 80, 680);
 
-    ctx.font = "500 26px 'DM Sans', sans-serif";
-    ctx.fillStyle = "rgba(255,255,255,.6)";
-    ctx.fillText("Padel Club Alicante Indoor", 80, H - 76);
-
     return new Promise(function(resolve){ canvas.toBlob(resolve, "image/png"); });
   });
 }
@@ -1551,7 +1563,10 @@ function shareResult(tipo, id, roundId){
     var file = null;
     try { file = new File([blob], fileName, { type: "image/png" }); } catch(e){}
     if (navigator.share && file && navigator.canShare && navigator.canShare({ files:[file] })){
-      navigator.share({ files:[file], title:"EIGHT. Club", text: info.labelA + " " + info.scoreText + " " + info.labelB }).catch(function(){});
+      var shareText = info.winner
+        ? (info.winner + " se lleva la victoria por " + info.scoreText + " frente a " + (info.winner === info.labelA ? info.labelB : info.labelA) + ". " + info.context + " — EIGHT. Club")
+        : (info.labelA + " " + info.scoreText + " " + info.labelB + ". " + info.context + " — EIGHT. Club");
+      navigator.share({ files:[file], title:"EIGHT. Club", text: shareText }).catch(function(){});
       return;
     }
     var url = URL.createObjectURL(blob);
