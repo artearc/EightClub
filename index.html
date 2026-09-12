@@ -103,7 +103,7 @@ var RATE_LIMIT_SECONDS = 20;
 const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:"", saveType:"", loginError:false, mobileMenuOpen:false, authUser:null, openFaq:null, showBackTop:false, faqDeleteConfirm:null, solicitudesSubtab:"pendientes", clearHistoryConfirm:false,
   playerModalOpen:false, playerPairId:null, playerIsOwner:false, playerSubmitMsg:"",
   playerAuthMode:"login", playerAuthError:"", playerAuthBusy:false, playerResetMsg:"", lastRevisionSubmitAt:0,
-  profileSlug:null };
+  profileSlug:null, rankingUpdates:[] };
 try {
   ui.playerPairId = localStorage.getItem("eightPlayerPairId") || null;
   ui.playerIsOwner = localStorage.getItem("eightPlayerIsOwner") === "1";
@@ -312,6 +312,29 @@ function computeHeadToHead(slug){
   });
   return Object.keys(results).map(function(k){ return results[k]; })
     .sort(function(a,b){ return (b.wins+b.losses) - (a.wins+a.losses); });
+}
+/* the "clasificación viva" toast: diffs a ranking snapshot taken right before a liga
+   result was saved against the ranking right after, for just the 4 players in that
+   match, and shows whichever of them actually moved. Callers take the "before" snapshot
+   themselves (see saveMatch/acceptRevision) since it has to happen before they mutate
+   STATE.matches — computePlayerRanking() always reads the CURRENT STATE. */
+var rankingToastTimer = null;
+function announceRankingChange(beforeRows, pairAId, pairBId){
+  var pa = pairById(pairAId), pb = pairById(pairBId);
+  if (!pa || !pb) return;
+  var afterRows = computePlayerRanking();
+  var updates = [pa.j1, pa.j2, pb.j1, pb.j2].map(slugifyName).map(function(slug){
+    var before = beforeRows.filter(function(r){ return r.slug === slug; })[0];
+    var after = afterRows.filter(function(r){ return r.slug === slug; })[0];
+    if (!after) return null;
+    var beforePos = before ? before.pos : after.pos;
+    if (beforePos === after.pos) return null;
+    return { slug:slug, name:after.name, before:beforePos, after:after.pos };
+  }).filter(Boolean);
+  if (!updates.length) return;
+  ui.rankingUpdates = updates;
+  if (rankingToastTimer) clearTimeout(rankingToastTimer);
+  rankingToastTimer = setTimeout(function(){ ui.rankingUpdates = []; rankingToastTimer = null; mount(); }, 5200);
 }
 
 function emptyState(big, text){
@@ -612,6 +635,19 @@ function renderPlayerProfileModal(rows){
     + '</div>'
     + (h2h.length ? '<h4 style="margin-top:1.4rem;">Cara a cara</h4>' + renderH2HList(h2h) : "")
     + '</div></div></div>';
+}
+function renderRankingUpdateToast(){
+  if (!ui.rankingUpdates.length) return "";
+  return '<div class="ranking-toast-stack" aria-live="polite">' + ui.rankingUpdates.map(function(u){
+    var diff = u.before - u.after;
+    var dirClass = diff > 0 ? "up" : diff < 0 ? "down" : "flat";
+    var arrow = diff > 0 ? "↑" : diff < 0 ? "↓" : "—";
+    return '<div class="ranking-toast ranking-toast--'+dirClass+'">'
+      + '<span class="ranking-toast-name">'+escHtml(u.name)+'</span>'
+      + '<span class="ranking-toast-move">#'+u.before+' <span class="ranking-toast-sep">→</span> #'+u.after+'</span>'
+      + '<span class="ranking-toast-delta">'+arrow+' '+Math.abs(diff)+' posici'+(Math.abs(diff)===1?"ón":"ones")+'</span>'
+      + '</div>';
+  }).join("") + '</div>';
 }
 function renderCuadros(){
   if (!STATE.loaded.bracket){
@@ -1024,7 +1060,7 @@ function renderApp(){
   return renderHeader()
     + '<main>' + renderHero() + renderStats() + renderFormato() + renderInscripcion()
     + renderLiga() + renderRanking(rankingRows) + renderCuadros() + renderFAQ() + renderContacto() + '</main>'
-    + renderFooter() + renderBottomNav() + renderOrganizer() + renderPlayerModal() + renderPlayerProfileModal(rankingRows);
+    + renderFooter() + renderBottomNav() + renderRankingUpdateToast() + renderOrganizer() + renderPlayerModal() + renderPlayerProfileModal(rankingRows);
 }
 /* ============================================================
    Scroll-driven fx engine
@@ -1776,11 +1812,13 @@ function acceptRevision(id){
   if (r.tipo === "liga"){
     var m = STATE.matches.filter(function(x){ return x.id===r.matchId; })[0];
     if (!m){ alert("No se encontró el partido de liga (puede que se haya eliminado)."); return; }
+    var beforeRows = (STATE.loaded.pairs && STATE.loaded.matches) ? computePlayerRanking() : null;
     m.sets = r.sets;
     m.marcador = r.sets.map(function(s){ return s.a + "-" + s.b; }).join(", ");
     m.setsA = r.sets.filter(function(s){ return s.a > s.b; }).length;
     m.setsB = r.sets.filter(function(s){ return s.b > s.a; }).length;
     m.played = true;
+    if (beforeRows) announceRankingChange(beforeRows, m.pairA, m.pairB);
     saveStateDoc("matches", { list: STATE.matches });
   } else {
     var round = STATE.bracket.filter(function(x){ return x.id===r.roundId; })[0];
@@ -1884,6 +1922,7 @@ function saveMatch(id){
     if (a === "" || b === "" || isNaN(ga) || isNaN(gb)){ alert("Revisa el set "+n+": falta el marcador de una de las parejas."); return; }
     sets.push({ a: ga, b: gb });
   }
+  var beforeRows = (sets.length && STATE.loaded.pairs && STATE.loaded.matches) ? computePlayerRanking() : null;
   m.sets = sets;
   m.marcador = sets.map(function(s){ return s.a + "-" + s.b; }).join(", ");
   if (sets.length){
@@ -1893,6 +1932,7 @@ function saveMatch(id){
   } else {
     m.setsA = null; m.setsB = null; m.played = false;
   }
+  if (beforeRows) announceRankingChange(beforeRows, m.pairA, m.pairB);
   saveStateDoc("matches", { list: STATE.matches });
 }
 function saveInfo(){

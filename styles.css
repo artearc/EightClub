@@ -314,6 +314,25 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 .h2h-row{display:flex;justify-content:space-between;align-items:center;background:var(--bg);border-radius:var(--radius-medium);padding:.6rem .9rem;font-size:.86rem;}
 .h2h-score{font-family:var(--font-display);color:var(--signal);}
 
+/* "clasificación viva" toast — a match just got saved, so tell the players it moved
+   whoever it moved (see announceRankingChange). JS removes it from the DOM on a
+   setTimeout rather than an animation-driven fade, since a re-mount from any unrelated
+   Firestore listener while it's up would otherwise restart a time-based CSS exit and
+   leave it lingering past its welcome. */
+.ranking-toast-stack{position:fixed;top:5.4rem;right:1.2rem;z-index:80;display:flex;flex-direction:column;gap:.6rem;pointer-events:none;max-width:calc(100vw - 2.4rem);}
+.ranking-toast{background:var(--bg-elevated);border-radius:var(--radius-medium);padding:.7rem 1rem;box-shadow:0 10px 26px rgba(55,61,32,.22);font-size:.85rem;display:flex;flex-direction:column;gap:.15rem;min-width:190px;animation:rankingToastIn .3s var(--ease-out);}
+.ranking-toast-name{font-weight:600;color:var(--ink);}
+.ranking-toast-move{font-family:var(--font-display);font-size:1.15rem;color:var(--ink-soft);letter-spacing:.02em;}
+.ranking-toast-sep{color:var(--ink-faint);font-size:.9rem;}
+.ranking-toast-delta{font-size:.76rem;font-weight:600;}
+.ranking-toast--up .ranking-toast-delta{color:var(--signal);}
+.ranking-toast--down .ranking-toast-delta{color:var(--danger);}
+@keyframes rankingToastIn{from{opacity:0;transform:translateX(24px);}to{opacity:1;transform:translateX(0);}}
+@media (max-width:640px){
+  .ranking-toast-stack{top:auto;bottom:calc(5.3rem + env(safe-area-inset-bottom));left:1.2rem;right:1.2rem;}
+  .ranking-toast{min-width:0;}
+}
+
 /* jornadas / matches */
 .jornadas{margin-top:2.2rem;display:flex;flex-direction:column;gap:1.6rem;}
 .jornada h3{font-family:var(--font-body);font-size:.78rem;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-faint);font-weight:500;margin-bottom:.7rem;}
