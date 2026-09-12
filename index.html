@@ -26,6 +26,18 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=DM+Sans:wght@500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<script>
+/* runs synchronously, before the page paints, so there's no flash of the wrong theme
+   while the deferred module script below loads — that script re-derives the same value
+   (see initTheme()) purely so toggleTheme() has a single source of truth to flip. */
+(function(){
+  try {
+    var saved = localStorage.getItem("eightTheme");
+    var theme = saved || (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme", theme);
+  } catch(e){}
+})();
+</script>
 </head>
 <body>
 <div id="app"></div>
@@ -108,6 +120,29 @@ try {
   ui.playerPairId = localStorage.getItem("eightPlayerPairId") || null;
   ui.playerIsOwner = localStorage.getItem("eightPlayerIsOwner") === "1";
 } catch(e){}
+
+/* applied as early as possible (before the first mount(), before Firebase even finishes
+   initializing) so there's no flash of the wrong theme on load. Defaults to the visitor's
+   OS preference until they actually use the toggle, at which point that explicit choice
+   is remembered and wins from then on. */
+function applyTheme(theme){
+  document.documentElement.setAttribute("data-theme", theme);
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", theme === "dark" ? "#1c1e14" : "#e8e1cc");
+}
+function initTheme(){
+  var saved = null;
+  try { saved = localStorage.getItem("eightTheme"); } catch(e){}
+  var theme = saved || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  applyTheme(theme);
+}
+function toggleTheme(){
+  var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+  applyTheme(next);
+  try { localStorage.setItem("eightTheme", next); } catch(e){}
+  mount();
+}
+initTheme();
 
 let inscripcionesUnsub = null;
 
@@ -406,13 +441,21 @@ function isotipoSvg(){
     + '<path d="'+ISOTIPO_D+'"/>'
     + '</svg>';
 }
+function sunIconSvg(){
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>';
+}
+function moonIconSvg(){
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79Z"/></svg>';
+}
 function renderHeader(){
   var navLinks = NAV_LINKS.map(function(l){ return '<a href="'+l[0]+'">'+l[1]+'</a>'; }).join("");
+  var isDark = document.documentElement.getAttribute("data-theme") === "dark";
   return '<header class="site-header"><div class="header-inner">'
     + '<a href="#inicio" class="header-logo">'+isotipoSvg()+'<span class="brand-mark">EIGHT<span class="dot">.</span></span><span class="brand-sub">Club</span></a>'
     + '<nav class="header-nav">' + navLinks + '</nav>'
     + '<button class="header-lock header-lock--player" data-action="open-player" type="button"><span class="dot"></span> <span class="lock-label">'+(ui.playerPairId ? "Mis partidos" : "Jugador")+'</span><span class="lock-label-short">Jugador</span></button>'
     + '<button class="header-lock" data-action="open-organizer" type="button"><span class="dot"></span> <span class="lock-label">Organizador</span><span class="lock-label-short">Admin</span></button>'
+    + '<button class="theme-toggle" data-action="toggle-theme" type="button" aria-label="'+(isDark?"Cambiar a modo claro":"Cambiar a modo oscuro")+'" title="'+(isDark?"Modo claro":"Modo oscuro")+'">'+(isDark?sunIconSvg():moonIconSvg())+'</button>'
     + '<button class="mobile-menu-btn" data-action="toggle-mobile-menu" type="button" aria-label="Abrir menú" aria-expanded="'+(ui.mobileMenuOpen?"true":"false")+'">'+(ui.mobileMenuOpen?"✕":"☰")+'</button>'
     + '</div>'
     + (ui.mobileMenuOpen ? '<nav class="mobile-nav-panel open">' + NAV_LINKS.map(function(l){ return '<a href="'+l[0]+'" data-action="close-mobile-menu">'+l[1]+'</a>'; }).join("") + '</nav>' : '')
@@ -2335,6 +2378,7 @@ document.addEventListener("click", function(e){
     case "confirm-clear-history": clearHistory(); break;
     case "cancel-clear-history": cancelClearHistory(); break;
     case "toggle-mobile-menu": toggleMobileMenu(); break;
+    case "toggle-theme": toggleTheme(); break;
     case "close-mobile-menu":
       e.preventDefault();
       var targetHref = el.getAttribute("href");
