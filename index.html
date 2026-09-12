@@ -230,21 +230,57 @@ function computeStandings(){
 }
 
 /* ---------- EIGHT Ranking (individual, derived from liga results) ----------
-   Players aren't stored as their own entities — only as j1/j2 strings on a pair — so a
-   "player" here is identified by a slugified name. That means a typo or a rename across
-   pairs/seasons silently splits or merges identities; acceptable for now since there's no
-   stable player id in the data model. Only liga matches feed the ranking: cuadros matches
-   store free-text labels instead of pair ids (see matchPairsExist), so there's no reliable
-   way to attribute a cuadros result to individual players yet. */
+   Players aren't stored as their own entities — only as j1/j2 strings on a pair (liga) or
+   a "Nombre1 / Nombre2" label (cuadros, see splitPairLabel) — so a "player" here is
+   identified by a slugified name. That means a typo or a rename across pairs/rounds
+   silently splits or merges identities; acceptable for now since there's no stable player
+   id in the data model. Both liga and cuadros results feed the ranking (see
+   collectRankedResults). */
 function slugifyName(name){
   return String(name || "").normalize("NFD").replace(/[̀-ͯ]/g, "")
     .toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
-/* Elo, applied per jornada rather than per match: every match in a jornada is scored
-   against ratings as they stood at the START of that jornada, and all the resulting
-   deltas land at once. That keeps the outcome independent of the arbitrary order matches
-   happen to sit in within a jornada (there's no real timestamp to order them by), while
-   still giving a clean "ranking as of last jornada" snapshot to diff the arrows against. */
+/* every played liga jornada and every cuadros round with at least one decided match, in
+   the order they actually happened — liga first (by jornada number), then cuadros (in
+   bracket order via sortedRounds, since a round has no jornada number of its own).
+   Cuadros matches only store "Nombre1 / Nombre2" label strings rather than pair ids (see
+   splitPairLabel), and a still-open "Por definir" side obviously can't be scored, so
+   those get filtered out here rather than in every caller. Shared by computePlayerRanking
+   (which needs the chronology to run Elo step-by-step) and computeHeadToHead (which just
+   wants every decided result, order aside). */
+function collectRankedResults(){
+  var byJornada = {};
+  STATE.matches.filter(function(m){ return m.played; }).filter(matchPairsExist).forEach(function(m){
+    (byJornada[m.jornada] = byJornada[m.jornada] || []).push(m);
+  });
+  var steps = Object.keys(byJornada).map(Number).sort(function(a,b){ return a-b; }).map(function(j){
+    return { label:"Jornada "+j, results: byJornada[j].map(function(m){
+      var pa = pairById(m.pairA), pb = pairById(m.pairB);
+      return { aNames:[pa.j1,pa.j2], bNames:[pb.j1,pb.j2], winA:m.setsA > m.setsB, setsA:m.setsA, setsB:m.setsB };
+    }) };
+  });
+  sortedRounds().forEach(function(r){
+    var results = (r.matches || []).filter(function(m){
+      if (!m.ganador) return false;
+      var pa = splitPairLabel(m.a), pb = splitPairLabel(m.b);
+      return !pa.tbd && !pb.tbd && pa.j1 && pa.j2 && pb.j1 && pb.j2;
+    }).map(function(m){
+      var pa = splitPairLabel(m.a), pb = splitPairLabel(m.b);
+      var sets = m.sets || [];
+      return { aNames:[pa.j1,pa.j2], bNames:[pb.j1,pb.j2], winA:m.ganador === m.a,
+        setsA: sets.filter(function(s){ return s.a > s.b; }).length,
+        setsB: sets.filter(function(s){ return s.b > s.a; }).length };
+    });
+    if (results.length) steps.push({ label:r.name, results:results });
+  });
+  return steps;
+}
+/* Elo, applied per step (a liga jornada or a cuadros round) rather than per match: every
+   result in a step is scored against ratings as they stood at the START of that step, and
+   all the resulting deltas land at once. That keeps the outcome independent of the
+   arbitrary order matches happen to sit in within a jornada (there's no real timestamp to
+   order them by), while still giving a clean "ranking as of the previous step" snapshot
+   to diff the arrows against. */
 function computePlayerRanking(){
   var RATING_START = 1500, K = 32;
   var players = {};
@@ -255,30 +291,24 @@ function computePlayerRanking(){
     players[slug].name = name;
     return players[slug];
   }
-  var byJornada = {};
-  STATE.matches.filter(function(m){ return m.played; }).filter(matchPairsExist).forEach(function(m){
-    (byJornada[m.jornada] = byJornada[m.jornada] || []).push(m);
-  });
-  var jornadas = Object.keys(byJornada).map(Number).sort(function(a,b){ return a-b; });
+  var steps = collectRankedResults();
   var prevSnapshot = null;
-  jornadas.forEach(function(j, ji){
-    if (ji === jornadas.length - 1){
+  steps.forEach(function(step, si){
+    if (si === steps.length - 1){
       prevSnapshot = {};
       Object.keys(players).forEach(function(s){ prevSnapshot[s] = players[s].rating; });
     }
     var deltas = {};
-    byJornada[j].forEach(function(m){
-      var pa = pairById(m.pairA), pb = pairById(m.pairB);
-      var pa1 = ensure(pa.j1), pa2 = ensure(pa.j2), pb1 = ensure(pb.j1), pb2 = ensure(pb.j2);
+    step.results.forEach(function(res){
+      var pa1 = ensure(res.aNames[0]), pa2 = ensure(res.aNames[1]), pb1 = ensure(res.bNames[0]), pb2 = ensure(res.bNames[1]);
       var ratingA = (pa1.rating + pa2.rating) / 2, ratingB = (pb1.rating + pb2.rating) / 2;
       var expA = 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
-      var winA = m.setsA > m.setsB;
-      var delta = K * ((winA ? 1 : 0) - expA);
-      [pa1,pa2].forEach(function(p){ deltas[p.slug] = (deltas[p.slug] || 0) + delta; p.pj++; p.sf+=m.setsA; p.sc+=m.setsB; if (winA) p.pg++; else p.pp++; p.form.push({ jornada:j, win:winA }); });
-      [pb1,pb2].forEach(function(p){ deltas[p.slug] = (deltas[p.slug] || 0) - delta; p.pj++; p.sf+=m.setsB; p.sc+=m.setsA; if (!winA) p.pg++; else p.pp++; p.form.push({ jornada:j, win:!winA }); });
+      var delta = K * ((res.winA ? 1 : 0) - expA);
+      [pa1,pa2].forEach(function(p){ deltas[p.slug] = (deltas[p.slug] || 0) + delta; p.pj++; p.sf+=res.setsA; p.sc+=res.setsB; if (res.winA) p.pg++; else p.pp++; p.form.push({ label:step.label, win:res.winA }); });
+      [pb1,pb2].forEach(function(p){ deltas[p.slug] = (deltas[p.slug] || 0) - delta; p.pj++; p.sf+=res.setsB; p.sc+=res.setsA; if (!res.winA) p.pg++; else p.pp++; p.form.push({ label:step.label, win:!res.winA }); });
     });
     Object.keys(deltas).forEach(function(slug){ players[slug].rating += deltas[slug]; });
-    Object.keys(players).forEach(function(slug){ players[slug].history.push({ jornada:j, rating:Math.round(players[slug].rating) }); });
+    Object.keys(players).forEach(function(slug){ players[slug].history.push({ rating:Math.round(players[slug].rating) }); });
   });
   var rows = Object.keys(players).map(function(s){
     var p = players[s];
@@ -296,35 +326,34 @@ function computePlayerRanking(){
 }
 function computeHeadToHead(slug){
   var results = {};
-  STATE.matches.filter(function(m){ return m.played; }).filter(matchPairsExist).forEach(function(m){
-    var pa = pairById(m.pairA), pb = pairById(m.pairB);
-    var inA = [slugifyName(pa.j1), slugifyName(pa.j2)].indexOf(slug) !== -1;
-    var inB = [slugifyName(pb.j1), slugifyName(pb.j2)].indexOf(slug) !== -1;
-    if (!inA && !inB) return;
-    var oppNames = inA ? [pb.j1, pb.j2] : [pa.j1, pa.j2];
-    var won = inA ? m.setsA > m.setsB : m.setsB > m.setsA;
-    oppNames.forEach(function(name){
-      var oslug = slugifyName(name);
-      if (!oslug || oslug === slug) return;
-      if (!results[oslug]) results[oslug] = { slug:oslug, name:name, wins:0, losses:0 };
-      results[oslug].name = name;
-      if (won) results[oslug].wins++; else results[oslug].losses++;
+  collectRankedResults().forEach(function(step){
+    step.results.forEach(function(res){
+      var inA = res.aNames.map(slugifyName).indexOf(slug) !== -1;
+      var inB = res.bNames.map(slugifyName).indexOf(slug) !== -1;
+      if (!inA && !inB) return;
+      var oppNames = inA ? res.bNames : res.aNames;
+      var won = inA ? res.winA : !res.winA;
+      oppNames.forEach(function(name){
+        var oslug = slugifyName(name);
+        if (!oslug || oslug === slug) return;
+        if (!results[oslug]) results[oslug] = { slug:oslug, name:name, wins:0, losses:0 };
+        results[oslug].name = name;
+        if (won) results[oslug].wins++; else results[oslug].losses++;
+      });
     });
   });
   return Object.keys(results).map(function(k){ return results[k]; })
     .sort(function(a,b){ return (b.wins+b.losses) - (a.wins+a.losses); });
 }
-/* the "clasificación viva" toast: diffs a ranking snapshot taken right before a liga
-   result was saved against the ranking right after, for just the 4 players in that
+/* the "clasificación viva" toast: diffs a ranking snapshot taken right before a liga or
+   cuadros result was saved against the ranking right after, for just the players in that
    match, and shows whichever of them actually moved. Callers take the "before" snapshot
-   themselves (see saveMatch/acceptRevision) since it has to happen before they mutate
-   STATE.matches — computePlayerRanking() always reads the CURRENT STATE. */
+   themselves (see saveMatch/acceptRevision/saveBracketMatch) since it has to happen
+   before they mutate STATE — computePlayerRanking() always reads the CURRENT STATE. */
 var rankingToastTimer = null;
-function announceRankingChange(beforeRows, pairAId, pairBId){
-  var pa = pairById(pairAId), pb = pairById(pairBId);
-  if (!pa || !pb) return;
+function announceRankingChange(beforeRows, names){
   var afterRows = computePlayerRanking();
-  var updates = [pa.j1, pa.j2, pb.j1, pb.j2].map(slugifyName).map(function(slug){
+  var updates = names.map(slugifyName).map(function(slug){
     var before = beforeRows.filter(function(r){ return r.slug === slug; })[0];
     var after = afterRows.filter(function(r){ return r.slug === slug; })[0];
     if (!after) return null;
@@ -336,6 +365,15 @@ function announceRankingChange(beforeRows, pairAId, pairBId){
   ui.rankingUpdates = updates;
   if (rankingToastTimer) clearTimeout(rankingToastTimer);
   rankingToastTimer = setTimeout(function(){ ui.rankingUpdates = []; rankingToastTimer = null; mount(); }, 5200);
+}
+/* same idea as announceRankingChange, but for a cuadros match — bm.a/bm.b are still
+   "Nombre1 / Nombre2" labels at the point a caller has this, so this resolves them (and
+   skips a still-"Por definir" side, or a match with no winner yet) before diffing. */
+function announceBracketRankingChange(beforeRows, bm){
+  if (!beforeRows || !bm.ganador) return;
+  var pa = splitPairLabel(bm.a), pb = splitPairLabel(bm.b);
+  if (pa.tbd || pb.tbd || !pa.j1 || !pa.j2 || !pb.j1 || !pb.j2) return;
+  announceRankingChange(beforeRows, [pa.j1, pa.j2, pb.j1, pb.j2]);
 }
 
 function emptyState(big, text){
@@ -574,7 +612,7 @@ function renderRankingDelta(r){
 function renderFormDots(form){
   if (!form.length) return '<span class="form-dots form-dots--empty">—</span>';
   return '<span class="form-dots">' + form.map(function(f){
-    return '<span class="form-dot'+(f.win?" win":" loss")+'" title="Jornada '+f.jornada+'">'+(f.win?"W":"L")+'</span>';
+    return '<span class="form-dot'+(f.win?" win":" loss")+'" title="'+escHtml(f.label)+'">'+(f.win?"W":"L")+'</span>';
   }).join("") + '</span>';
 }
 function renderRankingTable(rows){
@@ -601,7 +639,7 @@ function renderRanking(rows){
   return '<section id="ranking" class="section"><div class="section-inner">'
     + '<span class="section-mark" aria-hidden="true">04</span>'
     + '<p class="eyebrow">Ranking</p><h2 class="section-title">EIGHT Ranking</h2>'
-    + '<p class="section-lead">La clasificación individual de EIGHT., calculada a partir de todos los resultados de liga. Cada jornada mueve las posiciones — pulsa un nombre para ver su perfil.</p>'
+    + '<p class="section-lead">La clasificación individual de EIGHT., calculada a partir de todos los resultados de liga y cuadros. Cada partido mueve las posiciones — pulsa un nombre para ver su perfil.</p>'
     + body + '</div></section>';
 }
 function profileStat(label, value){
@@ -1861,17 +1899,19 @@ function acceptRevision(id){
     m.setsA = r.sets.filter(function(s){ return s.a > s.b; }).length;
     m.setsB = r.sets.filter(function(s){ return s.b > s.a; }).length;
     m.played = true;
-    if (beforeRows) announceRankingChange(beforeRows, m.pairA, m.pairB);
+    if (beforeRows) announceRankingChange(beforeRows, [pairById(m.pairA).j1, pairById(m.pairA).j2, pairById(m.pairB).j1, pairById(m.pairB).j2]);
     saveStateDoc("matches", { list: STATE.matches });
   } else {
     var round = STATE.bracket.filter(function(x){ return x.id===r.roundId; })[0];
     var bm = round ? round.matches.filter(function(x){ return x.id===r.matchId; })[0] : null;
     if (!bm){ alert("No se encontró el partido del cuadro (puede que se haya eliminado)."); return; }
+    var bmBeforeRows = (STATE.loaded.pairs && STATE.loaded.matches) ? computePlayerRanking() : null;
     bm.sets = r.sets;
     bm.resultado = r.sets.map(function(s){ return s.a + "-" + s.b; }).join(" / ");
     var winsA = r.sets.filter(function(s){ return s.a > s.b; }).length;
     var winsB = r.sets.filter(function(s){ return s.b > s.a; }).length;
     bm.ganador = winsA > winsB ? bm.a : winsB > winsA ? bm.b : "";
+    announceBracketRankingChange(bmBeforeRows, bm);
     saveStateDoc("bracket", { rounds: STATE.bracket });
   }
   updateDoc(doc(db, "revisiones", id), { estado: "aceptada" });
@@ -1978,7 +2018,7 @@ function saveMatch(id){
   } else {
     m.setsA = null; m.setsB = null; m.played = false;
   }
-  if (beforeRows) announceRankingChange(beforeRows, m.pairA, m.pairB);
+  if (beforeRows) announceRankingChange(beforeRows, [pairById(m.pairA).j1, pairById(m.pairA).j2, pairById(m.pairB).j1, pairById(m.pairB).j2]);
   saveStateDoc("matches", { list: STATE.matches });
 }
 function saveInfo(){
@@ -2056,6 +2096,7 @@ function saveBracketMatch(roundId, matchId){
     if (a === "" || b === "" || isNaN(ga) || isNaN(gb)){ alert("Revisa el set "+n+": falta el marcador de una de las parejas."); return; }
     sets.push({ a: ga, b: gb });
   }
+  var beforeRows = (STATE.loaded.pairs && STATE.loaded.matches) ? computePlayerRanking() : null;
   /* the winner <select>'s value is still the OLD label text (options are rendered from
      the match as it was before this edit) — re-map it onto the new label so renaming a
      pair doesn't silently clear or misattribute an already-recorded win */
@@ -2067,6 +2108,7 @@ function saveBracketMatch(roundId, matchId){
   m.sets = sets;
   m.resultado = sets.map(function(s){ return s.a + "-" + s.b; }).join(" / ");
   m.ganador = ganador;
+  announceBracketRankingChange(beforeRows, m);
   saveStateDoc("bracket", { rounds: STATE.bracket });
 }
 function addFaq(){
