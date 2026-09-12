@@ -576,6 +576,48 @@ function matchScheduleText(m){
   if (m.pista) parts.push(m.pista);
   return parts.join(" · ");
 }
+function icsPad2(n){ return n < 10 ? "0"+n : String(n); }
+function icsEscape(text){
+  return String(text || "").replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\n/g,"\\n");
+}
+/* a liga match's fecha/hora/pista as a downloadable .ics — no library, just the handful
+   of lines a calendar app actually needs. Times are written "floating" (no Z, no TZID):
+   every player here is in the same timezone, so the simplest correct thing is to let
+   each device read it as its own local time instead of building out a VTIMEZONE block. A
+   match with a date but no time yet becomes an all-day event rather than being skipped. */
+function buildMatchIcs(m, summary, location){
+  var datePart = m.fecha.replace(/-/g, "");
+  var now = new Date();
+  var dtstamp = now.toISOString().replace(/[-:]/g,"").split(".")[0] + "Z";
+  var lines = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//EIGHT Club//ES","CALSCALE:GREGORIAN","BEGIN:VEVENT","UID:eight-"+m.id+"@eightclub","DTSTAMP:"+dtstamp];
+  if (m.hora){
+    var start = new Date(m.fecha + "T" + m.hora + ":00");
+    var end = new Date(start.getTime() + 90 * 60000);
+    var fmt = function(d){ return d.getFullYear() + icsPad2(d.getMonth()+1) + icsPad2(d.getDate()) + "T" + icsPad2(d.getHours()) + icsPad2(d.getMinutes()) + "00"; };
+    lines.push("DTSTART:"+fmt(start), "DTEND:"+fmt(end));
+  } else {
+    var endD = new Date(m.fecha + "T00:00:00");
+    endD.setDate(endD.getDate() + 1);
+    var endDate = endD.getFullYear() + icsPad2(endD.getMonth()+1) + icsPad2(endD.getDate());
+    lines.push("DTSTART;VALUE=DATE:"+datePart, "DTEND;VALUE=DATE:"+endDate);
+  }
+  lines.push("SUMMARY:"+icsEscape(summary));
+  if (location) lines.push("LOCATION:"+icsEscape(location));
+  lines.push("DESCRIPTION:"+icsEscape("EIGHT. Club — "+summary), "END:VEVENT", "END:VCALENDAR");
+  return lines.join("\r\n");
+}
+function addMatchToCalendar(id){
+  var m = STATE.matches.filter(function(x){ return x.id === id; })[0];
+  if (!m || !m.fecha) return;
+  var summary = "EIGHT. Club: " + pairLabel(m.pairA) + " vs " + pairLabel(m.pairB);
+  var ics = buildMatchIcs(m, summary, m.pista);
+  var blob = new Blob([ics], { type:"text/calendar;charset=utf-8" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = "eight-club-jornada-"+m.jornada+".ics";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+}
 function renderMatchesByJornada(){
   var byJ = {};
   STATE.matches.filter(matchPairsExist).forEach(function(m){ (byJ[m.jornada]=byJ[m.jornada]||[]).push(m); });
@@ -587,6 +629,9 @@ function renderMatchesByJornada(){
 function shareIconSvg(){
   return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v14"/></svg>';
 }
+function calendarIconSvg(){
+  return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>';
+}
 function renderMatchRow(m){
   var labelA = pairLabel(m.pairA), labelB = pairLabel(m.pairB), scoreHtml;
   if (m.played){
@@ -596,12 +641,15 @@ function renderMatchRow(m){
     scoreHtml = '<span class="badge badge--pending">Pendiente</span>';
   }
   var schedule = matchScheduleText(m);
+  var showIcs = !m.played && m.fecha;
   return '<li class="match-row fx-reveal">'
     + '<span class="'+(m.played && m.setsA>m.setsB ? "winner":"")+'">'+escHtml(labelA)+'</span>'
     + '<span class="vs">vs</span>'
     + '<span class="'+(m.played && m.setsB>m.setsA ? "winner":"")+'">'+escHtml(labelB)+'</span>'
     + '<span class="match-result">'+scoreHtml+'</span>'
-    + (schedule ? '<span class="match-meta">'+escHtml(schedule)+'</span>' : "")
+    + (schedule ? '<span class="match-meta">'+escHtml(schedule)
+        + (showIcs ? ' <button class="ics-btn" data-action="add-to-calendar" data-id="'+m.id+'" type="button">'+calendarIconSvg()+' Calendario</button>' : "")
+        + '</span>' : "")
     + '</li>';
 }
 function renderRankingDelta(r){
@@ -615,10 +663,13 @@ function renderFormDots(form){
     return '<span class="form-dot'+(f.win?" win":" loss")+'" title="'+escHtml(f.label)+'">'+(f.win?"W":"L")+'</span>';
   }).join("") + '</span>';
 }
+function renderRankPos(pos){
+  return pos <= 3 ? '<span class="rank-pos rank-pos--'+pos+'">'+pos+'</span>' : String(pos);
+}
 function renderRankingTable(rows){
   var body = rows.map(function(r){
     return '<tr>'
-      + '<td class="num">'+r.pos+'</td>'
+      + '<td class="num">'+renderRankPos(r.pos)+'</td>'
       + '<td>'+renderRankingDelta(r)+'</td>'
       + '<td><button class="rank-name" data-action="open-player-profile" data-slug="'+escHtml(r.slug)+'" type="button">'+escHtml(r.name)+'</button></td>'
       + '<td class="num pts">'+r.rating+'</td>'
@@ -638,7 +689,10 @@ function renderRanking(rows){
     : emptyState("Todavía no hay ranking", "En cuanto se jueguen partidos de liga, aquí aparecerá la clasificación individual de EIGHT.");
   return '<section id="ranking" class="section"><div class="section-inner">'
     + '<span class="section-mark" aria-hidden="true">04</span>'
-    + '<p class="eyebrow">Ranking</p><h2 class="section-title">EIGHT Ranking</h2>'
+    + '<div class="ranking-head">'
+    +   '<div><p class="eyebrow">Ranking</p><h2 class="section-title">EIGHT Ranking</h2></div>'
+    +   (rows.length ? '<button class="btn btn-outline btn-sm" data-action="share-ranking" type="button">'+shareIconSvg()+' Compartir ranking</button>' : "")
+    + '</div>'
     + '<p class="section-lead">La clasificación individual de EIGHT., calculada a partir de todos los resultados de liga y cuadros. Cada partido mueve las posiciones — pulsa un nombre para ver su perfil.</p>'
     + body + '</div></section>';
 }
@@ -847,6 +901,33 @@ function renderProfileLinks(pair, rankingRows){
   if (!links.length) return "";
   return '<p style="margin-top:.6rem;display:flex;gap:1rem;flex-wrap:wrap;">' + links.join("") + '</p>';
 }
+/* the earliest still-unplayed liga match for this pair — dated ones sort first (soonest
+   date+time wins), undated ones fall back to jornada order at the end of the list, since
+   there's nothing else to sort them by. */
+function nextMatchFor(myLigaMatches){
+  var pending = myLigaMatches.filter(function(m){ return !m.played; });
+  if (!pending.length) return null;
+  pending.sort(function(a,b){
+    if (a.fecha && b.fecha) return (a.fecha+(a.hora||"")).localeCompare(b.fecha+(b.hora||""));
+    if (a.fecha) return -1;
+    if (b.fecha) return 1;
+    return a.jornada - b.jornada;
+  });
+  return pending[0];
+}
+function renderNextMatchCard(pair, m){
+  if (!m) return "";
+  var rival = pairLabel(m.pairA===pair.id ? m.pairB : m.pairA);
+  var schedule = matchScheduleText(m);
+  return '<div class="next-match-card">'
+    + '<div class="next-match-label">Tu próximo partido</div>'
+    + '<div class="next-match-rival">vs '+escHtml(rival)+'</div>'
+    + (schedule
+        ? '<div class="next-match-when">'+escHtml(schedule)+'</div>'
+        : '<div class="next-match-when next-match-when--tbd">Fecha todavía por confirmar</div>')
+    + (m.fecha ? '<button class="btn btn-outline btn-sm" data-action="add-to-calendar" data-id="'+m.id+'" type="button">'+calendarIconSvg()+' Añadir a mi calendario</button>' : "")
+    + '</div>';
+}
 function renderPlayerDashboard(pair, rankingRows){
   var label = pair.j1 + " / " + pair.j2;
   var myLigaMatches = STATE.matches.filter(function(m){ return m.pairA===pair.id || m.pairB===pair.id; });
@@ -877,6 +958,7 @@ function renderPlayerDashboard(pair, rankingRows){
     + '<div class="modal-body">'
     + '<p style="color:var(--ink-soft);font-size:.9rem;">Pareja: <strong>'+escHtml(label)+'</strong>'+(ui.playerIsOwner?"":' <span class="badge" style="background:var(--signal-tint);color:var(--signal);">Acompañante</span>')+'</p>'
     + renderProfileLinks(pair, rankingRows)
+    + renderNextMatchCard(pair, nextMatchFor(myLigaMatches))
     + (ui.playerSubmitMsg ? '<div class="status-banner">'+escHtml(ui.playerSubmitMsg)+'</div>' : "")
     + '<h4 style="margin-top:1.2rem;">Liga</h4>' + ligaHtml
     + (myBracketMatches.length ? '<h4 style="margin-top:1.4rem;">Cuadros</h4>' + bracketHtml : "")
@@ -887,9 +969,10 @@ function renderPlayerDashboard(pair, rankingRows){
 function renderPlayerMatchRow(mySide, tipo, matchId, roundId, etiqueta, rival, sets, rev, schedule){
   sets = sets || [];
   var idBase = "pr-"+tipo+"-"+matchId;
+  var icsBtn = tipo === "liga" ? '<button class="ics-btn" data-action="add-to-calendar" data-id="'+matchId+'" type="button">'+calendarIconSvg()+' Calendario</button>' : "";
   if (rev && rev.estado === "pendiente"){
     return '<div class="bracket-edit-row"><div class="bracket-edit-teams">'+escHtml(etiqueta)+' · vs '+escHtml(rival)+'</div>'
-      + (schedule ? '<div class="match-meta">'+escHtml(schedule)+'</div>' : "")
+      + (schedule ? '<div class="match-meta">'+escHtml(schedule)+' '+icsBtn+'</div>' : "")
       + '<span class="badge badge--pending">Enviado, pendiente de revisión</span></div>';
   }
   var setsHtml = [1,2,3].map(function(n){
@@ -903,7 +986,7 @@ function renderPlayerMatchRow(mySide, tipo, matchId, roundId, etiqueta, rival, s
   }).join("");
   return '<div class="bracket-edit-row">'
     + '<div class="bracket-edit-teams">'+escHtml(etiqueta)+' <span class="vs">vs</span> '+escHtml(rival)+'</div>'
-    + (schedule ? '<div class="match-meta">'+escHtml(schedule)+'</div>' : "")
+    + (schedule ? '<div class="match-meta">'+escHtml(schedule)+' '+icsBtn+'</div>' : "")
     + (rev && rev.estado==="rechazada" ? '<p style="color:var(--danger);font-size:.8rem;margin-bottom:.5rem;">Vuestro envío anterior fue rechazado por el organizador — revisad el resultado y volved a enviarlo.</p>' : "")
     + '<div class="bracket-edit-sets">'+setsHtml+'</div>'
     + '<div class="bracket-edit-actions"><button class="btn btn-primary btn-sm" data-action="submit-player-result" data-tipo="'+tipo+'" data-id="'+matchId+'" data-round="'+(roundId||"")+'" type="button">Enviar resultado</button></div>'
@@ -1794,59 +1877,67 @@ function fitCanvasText(ctx, text, maxWidth, startSize, weight, family){
   } while (ctx.measureText(text).width > maxWidth && size > 26);
   return ctx.font;
 }
+/* shared background for every branded share card (result or ranking): the terracotta→
+   olive gradient, dot texture, ghost "8", and isotipo+wordmark header — drawn identically
+   so a result card and a ranking card read as the same product. eyebrow is the small
+   label under the header ("JORNADA 3", "RANKING"); pass "" to skip it. */
+function drawCardChrome(ctx, W, H, eyebrow){
+  var grad = ctx.createLinearGradient(0, 0, W, H);
+  grad.addColorStop(0, "#c1592c");
+  grad.addColorStop(1, "#373d20");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = "rgba(255,255,255,.08)";
+  for (var y = 40; y < H - 20; y += 36){
+    for (var x = 40; x < W - 20; x += 36){
+      ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  /* ghost "8", bleeding off the right edge at the hero's own scale/opacity — drawn
+     before the content so the header/score sit legibly on top of it. */
+  ctx.save();
+  ctx.font = "400 1100px 'Getla','Anton',sans-serif";
+  ctx.fillStyle = "rgba(255,255,255,.14)";
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+  ctx.fillText("8", W - 130, H / 2 + 40);
+  ctx.restore();
+
+  /* isotipo + wordmark share one vertical center instead of two different baselines. */
+  var headerY = 118;
+  var isoH = 58, isoScale = isoH / 819;
+  var isoW = 1024 * isoScale;
+  var isoLeft = 80;
+  ctx.save();
+  ctx.translate(isoLeft + isoW / 2, headerY);
+  ctx.scale(isoScale, isoScale);
+  ctx.translate(-512, -409.5);
+  ctx.fillStyle = "rgba(255,255,255,.92)";
+  ctx.fill(new Path2D(ISOTIPO_D));
+  ctx.restore();
+
+  ctx.fillStyle = "rgba(255,255,255,.92)";
+  ctx.font = "700 34px 'DM Sans', sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText("EIGHT. CLUB", isoLeft + isoW + 24, headerY);
+  ctx.textBaseline = "alphabetic";
+
+  if (eyebrow){
+    ctx.fillStyle = "rgba(255,255,255,.65)";
+    ctx.font = "600 28px 'DM Sans', sans-serif";
+    ctx.fillText(eyebrow.toUpperCase(), 80, 280);
+  }
+}
 function drawResultCard(info){
   return (document.fonts ? document.fonts.ready : Promise.resolve()).then(function(){
     var W = 1080, H = 1080;
     var canvas = document.createElement("canvas");
     canvas.width = W; canvas.height = H;
     var ctx = canvas.getContext("2d");
-
-    var grad = ctx.createLinearGradient(0, 0, W, H);
-    grad.addColorStop(0, "#c1592c");
-    grad.addColorStop(1, "#373d20");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
-
-    ctx.fillStyle = "rgba(255,255,255,.08)";
-    for (var y = 40; y < H - 20; y += 36){
-      for (var x = 40; x < W - 20; x += 36){
-        ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
-      }
-    }
-
-    /* ghost "8", bleeding off the right edge at the hero's own scale/opacity — drawn
-       before the content so the header/score sit legibly on top of it. */
-    ctx.save();
-    ctx.font = "400 1100px 'Getla','Anton',sans-serif";
-    ctx.fillStyle = "rgba(255,255,255,.14)";
-    ctx.textBaseline = "middle";
-    ctx.textAlign = "center";
-    ctx.fillText("8", W - 130, H / 2 + 40);
-    ctx.restore();
-
-    /* isotipo + wordmark share one vertical center instead of two different baselines. */
-    var headerY = 118;
-    var isoH = 58, isoScale = isoH / 819;
-    var isoW = 1024 * isoScale;
-    var isoLeft = 80;
-    ctx.save();
-    ctx.translate(isoLeft + isoW / 2, headerY);
-    ctx.scale(isoScale, isoScale);
-    ctx.translate(-512, -409.5);
-    ctx.fillStyle = "rgba(255,255,255,.92)";
-    ctx.fill(new Path2D(ISOTIPO_D));
-    ctx.restore();
-
-    ctx.fillStyle = "rgba(255,255,255,.92)";
-    ctx.font = "700 34px 'DM Sans', sans-serif";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.fillText("EIGHT. CLUB", isoLeft + isoW + 24, headerY);
-    ctx.textBaseline = "alphabetic";
-
-    ctx.fillStyle = "rgba(255,255,255,.65)";
-    ctx.font = "600 28px 'DM Sans', sans-serif";
-    ctx.fillText(info.context.toUpperCase(), 80, 280);
+    drawCardChrome(ctx, W, H, info.context);
 
     var maxW = W - 160;
     var isAWinner = info.winner && info.winner === info.labelA;
@@ -1871,20 +1962,66 @@ function shareResult(tipo, id, roundId){
   drawResultCard(info).then(function(blob){
     if (!blob) return;
     var fileName = "eight-club-" + info.labelA.replace(/\s+/g,"-").toLowerCase() + "-vs-" + info.labelB.replace(/\s+/g,"-").toLowerCase() + ".png";
-    var file = null;
-    try { file = new File([blob], fileName, { type: "image/png" }); } catch(e){}
-    if (navigator.share && file && navigator.canShare && navigator.canShare({ files:[file] })){
-      var shareText = info.winner
-        ? (info.winner + " se lleva la victoria por " + info.scoreText + " frente a " + (info.winner === info.labelA ? info.labelB : info.labelA) + ". " + info.context + " — EIGHT. Club")
-        : (info.labelA + " " + info.scoreText + " " + info.labelB + ". " + info.context + " — EIGHT. Club");
-      navigator.share({ files:[file], title:"EIGHT. Club", text: shareText }).catch(function(){});
-      return;
-    }
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
-    a.href = url; a.download = fileName;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+    var shareText = info.winner
+      ? (info.winner + " se lleva la victoria por " + info.scoreText + " frente a " + (info.winner === info.labelA ? info.labelB : info.labelA) + ". " + info.context + " — EIGHT. Club")
+      : (info.labelA + " " + info.scoreText + " " + info.labelB + ". " + info.context + " — EIGHT. Club");
+    shareOrDownloadImage(blob, fileName, shareText);
+  });
+}
+/* shares/downloads any canvas-drawn branded image (a result card or the ranking card) —
+   native share sheet with the file attached where supported, otherwise a plain download,
+   exactly the two paths shareResult already needed. */
+function shareOrDownloadImage(blob, fileName, shareText){
+  if (!blob) return;
+  var file = null;
+  try { file = new File([blob], fileName, { type: "image/png" }); } catch(e){}
+  if (navigator.share && file && navigator.canShare && navigator.canShare({ files:[file] })){
+    navigator.share({ files:[file], title:"EIGHT. Club", text: shareText }).catch(function(){});
+    return;
+  }
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = fileName;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+}
+function drawRankingCard(rows){
+  return (document.fonts ? document.fonts.ready : Promise.resolve()).then(function(){
+    var W = 1080, H = 1080;
+    var canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    var ctx = canvas.getContext("2d");
+    drawCardChrome(ctx, W, H, "Ranking");
+
+    var top = rows.slice(0, 5);
+    var rowY = 380, rowGap = 118, nameMaxW = 560;
+    top.forEach(function(r, i){
+      var y = rowY + i * rowGap;
+      var isFirst = i === 0;
+      ctx.textAlign = "left";
+      ctx.font = "400 46px 'Getla','Anton',sans-serif";
+      ctx.fillStyle = isFirst ? "#ffffff" : "rgba(255,255,255,.55)";
+      ctx.fillText((i+1 < 10 ? "0" : "") + (i+1), 80, y);
+
+      ctx.font = fitCanvasText(ctx, r.name, nameMaxW, 46, 400, "'Getla','Anton',sans-serif");
+      ctx.fillStyle = isFirst ? "#ffffff" : "rgba(255,255,255,.85)";
+      ctx.fillText(r.name, 190, y);
+
+      ctx.textAlign = "right";
+      ctx.font = "500 36px 'DM Sans', sans-serif";
+      ctx.fillStyle = "#e8e1cc";
+      ctx.fillText(String(r.rating), W - 140, y);
+    });
+
+    return new Promise(function(resolve){ canvas.toBlob(resolve, "image/png"); });
+  });
+}
+function shareRanking(){
+  var rows = computePlayerRanking();
+  if (!rows.length){ alert("Todavía no hay ranking que compartir."); return; }
+  drawRankingCard(rows).then(function(blob){
+    var top = rows.slice(0, 3).map(function(r, i){ return (i+1) + ". " + r.name; }).join(", ");
+    shareOrDownloadImage(blob, "eight-club-ranking.png", "Así va el EIGHT Ranking: " + top + " — EIGHT. Club");
   });
 }
 function acceptRevision(id){
@@ -2230,6 +2367,8 @@ document.addEventListener("click", function(e){
     case "player-logout": playerLogout(); break;
     case "submit-player-result": submitPlayerResult(el.getAttribute("data-tipo"), id, el.getAttribute("data-round") || null); break;
     case "share-result": shareResult(el.getAttribute("data-tipo"), id, el.getAttribute("data-round") || null); break;
+    case "share-ranking": shareRanking(); break;
+    case "add-to-calendar": addMatchToCalendar(id); break;
     case "accept-revision": acceptRevision(id); break;
     case "reject-revision": rejectRevision(id); break;
     case "regenerate-pin": regeneratePin(id); break;

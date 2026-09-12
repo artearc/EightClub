@@ -298,6 +298,12 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 .rank-delta--flat{color:var(--ink-faint);}
 .rank-name{background:none;border:none;padding:0;font:inherit;font-weight:500;color:var(--ink);cursor:pointer;text-align:left;text-underline-offset:3px;}
 .rank-name:hover{color:var(--signal);text-decoration:underline;}
+.rank-pos{display:inline-flex;align-items:center;justify-content:center;width:1.7rem;height:1.7rem;border-radius:50%;font-family:var(--font-display);font-weight:400;}
+.rank-pos--1{background:var(--signal);color:var(--color-white);}
+.rank-pos--2{background:var(--signal-tint);color:var(--signal);}
+.rank-pos--3{background:rgba(55,61,32,.08);color:var(--ink-soft);}
+.ranking-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
+.ranking-head .btn{flex-shrink:0;}
 .form-dots{display:inline-flex;gap:.28rem;}
 .form-dots--empty{color:var(--ink-faint);}
 .form-dot{display:inline-flex;align-items:center;justify-content:center;width:1.15rem;height:1.15rem;border-radius:50%;font-size:.6rem;font-weight:700;color:var(--color-white);}
@@ -354,6 +360,15 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 .match-result{display:flex;align-items:center;gap:.5rem;}
 .match-meta{grid-column:1/-1;font-size:.76rem;color:var(--ink-faint);}
 .bracket-edit-row .match-meta{display:block;margin:-.35rem 0 .6rem;}
+.ics-btn{display:inline-flex;align-items:center;gap:.3rem;background:none;border:none;padding:0;color:var(--signal);font-size:.76rem;font-weight:500;cursor:pointer;text-underline-offset:2px;}
+.ics-btn:hover{text-decoration:underline;}
+.next-match-card{background:var(--signal);color:var(--signal-ink);border-radius:var(--radius-cards);padding:1.2rem 1.4rem;margin:1rem 0;}
+.next-match-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;opacity:.75;}
+.next-match-rival{font-family:var(--font-display);font-size:1.5rem;margin:.3rem 0;}
+.next-match-when{font-size:.88rem;opacity:.9;margin-bottom:.8rem;}
+.next-match-when--tbd{font-style:italic;opacity:.7;}
+.next-match-card .btn{background:rgba(255,255,255,.16);color:var(--signal-ink);box-shadow:none;}
+.next-match-card .btn:hover{background:rgba(255,255,255,.26);}
 
 /* share-result — a quiet icon button that only shows up once a match actually has a
    score; generates the branded result-card image on click (see shareResult() in the
