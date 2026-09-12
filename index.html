@@ -251,7 +251,7 @@ function computePlayerRanking(){
   function ensure(name){
     var slug = slugifyName(name);
     if (!slug) return null;
-    if (!players[slug]) players[slug] = { slug:slug, name:name, rating:RATING_START, pj:0, pg:0, pp:0, sf:0, sc:0, form:[] };
+    if (!players[slug]) players[slug] = { slug:slug, name:name, rating:RATING_START, pj:0, pg:0, pp:0, sf:0, sc:0, form:[], history:[] };
     players[slug].name = name;
     return players[slug];
   }
@@ -278,13 +278,14 @@ function computePlayerRanking(){
       [pb1,pb2].forEach(function(p){ deltas[p.slug] = (deltas[p.slug] || 0) - delta; p.pj++; p.sf+=m.setsB; p.sc+=m.setsA; if (!winA) p.pg++; else p.pp++; p.form.push({ jornada:j, win:!winA }); });
     });
     Object.keys(deltas).forEach(function(slug){ players[slug].rating += deltas[slug]; });
+    Object.keys(players).forEach(function(slug){ players[slug].history.push({ jornada:j, rating:Math.round(players[slug].rating) }); });
   });
   var rows = Object.keys(players).map(function(s){
     var p = players[s];
     var prevRating = prevSnapshot && (s in prevSnapshot) ? prevSnapshot[s] : p.rating;
     return { slug:p.slug, name:p.name, rating:Math.round(p.rating), prevRating:Math.round(prevRating),
       pj:p.pj, pg:p.pg, pp:p.pp, sf:p.sf, sc:p.sc,
-      winRate: p.pj ? Math.round(p.pg / p.pj * 100) : 0, form: p.form.slice(-5) };
+      winRate: p.pj ? Math.round(p.pg / p.pj * 100) : 0, form: p.form.slice(-5), history: p.history };
   });
   rows.sort(function(a,b){ return b.rating - a.rating; });
   var prevOrder = rows.slice().sort(function(a,b){ return b.prevRating - a.prevRating; });
@@ -523,6 +524,20 @@ function renderStandingsTable(rows){
   return '<div class="table-wrap"><table class="standings"><thead><tr><th>#</th><th>Pareja</th><th>PJ</th><th>PG</th><th>PP</th><th>Sets</th><th>Dif sets</th><th>Dif juegos</th><th>Pts</th></tr></thead><tbody>'+body+'</tbody></table></div>';
 }
 function matchPairsExist(m){ return !!pairById(m.pairA) && !!pairById(m.pairB); }
+/* "¿cuándo y dónde juego?" shouldn't require asking the organizer on WhatsApp — fecha/
+   hora/pista are optional per-match fields the organizer fills in from the Liga tab (see
+   renderOrgLigaTab/saveMatch) and this renders them the same way everywhere a match shows
+   up: the public Liga list, the organizer's own editor, and a player's own dashboard. */
+function matchScheduleText(m){
+  var parts = [];
+  if (m.fecha){
+    var d = new Date(m.fecha + "T00:00:00");
+    parts.push(isNaN(d.getTime()) ? m.fecha : d.toLocaleDateString("es-ES", { day:"numeric", month:"short" }));
+  }
+  if (m.hora) parts.push(m.hora);
+  if (m.pista) parts.push(m.pista);
+  return parts.join(" · ");
+}
 function renderMatchesByJornada(){
   var byJ = {};
   STATE.matches.filter(matchPairsExist).forEach(function(m){ (byJ[m.jornada]=byJ[m.jornada]||[]).push(m); });
@@ -542,11 +557,14 @@ function renderMatchRow(m){
   } else {
     scoreHtml = '<span class="badge badge--pending">Pendiente</span>';
   }
+  var schedule = matchScheduleText(m);
   return '<li class="match-row fx-reveal">'
     + '<span class="'+(m.played && m.setsA>m.setsB ? "winner":"")+'">'+escHtml(labelA)+'</span>'
     + '<span class="vs">vs</span>'
     + '<span class="'+(m.played && m.setsB>m.setsA ? "winner":"")+'">'+escHtml(labelB)+'</span>'
-    + '<span class="match-result">'+scoreHtml+'</span></li>';
+    + '<span class="match-result">'+scoreHtml+'</span>'
+    + (schedule ? '<span class="match-meta">'+escHtml(schedule)+'</span>' : "")
+    + '</li>';
 }
 function renderRankingDelta(r){
   if (r.delta > 0) return '<span class="rank-delta rank-delta--up">↑ '+r.delta+'</span>';
@@ -594,6 +612,30 @@ function renderH2HList(list){
     return '<div class="h2h-row"><span>'+escHtml(h.name)+'</span><span class="h2h-score">'+h.wins+' — '+h.losses+'</span></div>';
   }).join("") + '</div>';
 }
+function renderSparkline(history){
+  if (!history || history.length < 2) return "";
+  var W = 280, H = 56, pad = 4;
+  var values = history.map(function(h){ return h.rating; });
+  var min = Math.min.apply(null, values), max = Math.max.apply(null, values);
+  var range = (max - min) || 1;
+  var stepX = (W - pad * 2) / (values.length - 1);
+  var pts = values.map(function(v, i){
+    var x = pad + i * stepX;
+    var y = H - pad - ((v - min) / range) * (H - pad * 2);
+    return x.toFixed(1) + "," + y.toFixed(1);
+  });
+  var lastX = pad + (values.length - 1) * stepX;
+  var lastY = H - pad - ((values[values.length-1] - min) / range) * (H - pad * 2);
+  var up = values[values.length - 1] >= values[0];
+  var color = "var(--" + (up ? "signal" : "danger") + ")";
+  return '<div class="profile-sparkline">'
+    + '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">'
+    +   '<polyline points="'+pts.join(" ")+'" fill="none" style="stroke:'+color+';stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"/>'
+    +   '<circle cx="'+lastX.toFixed(1)+'" cy="'+lastY.toFixed(1)+'" r="3.5" style="fill:'+color+';"/>'
+    + '</svg>'
+    + '<div class="profile-sparkline-label">Evolución del rating · '+history.length+' jornada'+(history.length===1?"":"s")+'</div>'
+    + '</div>';
+}
 function renderPlayerProfileModal(rows){
   if (!ui.profileSlug) return "";
   var r = rows.filter(function(x){ return x.slug === ui.profileSlug; })[0];
@@ -608,6 +650,7 @@ function renderPlayerProfileModal(rows){
     +   profileStat("% Victorias", r.winRate+"%")
     +   profileStat("Posiciones", renderRankingDelta(r))
     + '</div>'
+    + renderSparkline(r.history)
     + '<div class="profile-line">'
     +   '<span>Partidos</span><strong>'+r.pj+'</strong>'
     +   '<span>Ganados</span><strong>'+r.pg+'</strong>'
@@ -699,10 +742,10 @@ function renderFooter(){
    estado:"pendiente" (plus a rate-limit stamp, see submitPlayerResult), and only an
    organizer's accept-revision/reject-revision action ever touches the real match data —
    mirroring exactly how the public inscripción form already works. */
-function renderPlayerModal(){
+function renderPlayerModal(rankingRows){
   if (!ui.playerModalOpen) return "";
   var pair = ui.playerPairId ? pairById(ui.playerPairId) : null;
-  if (pair) return renderPlayerDashboard(pair);
+  if (pair) return renderPlayerDashboard(pair, rankingRows);
 
   var mode = ui.playerAuthMode || "login";
   var modeTabs = mode === "reset" ? "" : '<div class="subtabs" style="margin-bottom:1rem;">'
@@ -755,7 +798,18 @@ function renderCompanionPinSection(pair){
     + '<button class="btn btn-outline btn-sm" data-action="generate-companion-pin" type="button">'+(pin?"Generar uno nuevo":"Generar PIN")+'</button>'
     + '</div>';
 }
-function renderPlayerDashboard(pair){
+function renderProfileLinks(pair, rankingRows){
+  rankingRows = rankingRows || [];
+  var links = [pair.j1, pair.j2].map(function(name){
+    var slug = slugifyName(name);
+    var has = rankingRows.some(function(r){ return r.slug === slug; });
+    if (!has) return "";
+    return '<button class="inline-link-btn" data-action="open-player-profile" data-slug="'+escHtml(slug)+'" type="button">Ver perfil de '+escHtml(name)+'</button>';
+  }).filter(Boolean);
+  if (!links.length) return "";
+  return '<p style="margin-top:.6rem;display:flex;gap:1rem;flex-wrap:wrap;">' + links.join("") + '</p>';
+}
+function renderPlayerDashboard(pair, rankingRows){
   var label = pair.j1 + " / " + pair.j2;
   var myLigaMatches = STATE.matches.filter(function(m){ return m.pairA===pair.id || m.pairB===pair.id; });
   var myBracketMatches = [];
@@ -772,7 +826,7 @@ function renderPlayerDashboard(pair){
     ? myLigaMatches.map(function(m){
         var mySide = m.pairA===pair.id ? "a" : "b";
         var rival = pairLabel(mySide==="a" ? m.pairB : m.pairA);
-        return renderPlayerMatchRow(mySide, "liga", m.id, null, "Jornada "+m.jornada, rival, m.sets, revisionFor("liga", m.id));
+        return renderPlayerMatchRow(mySide, "liga", m.id, null, "Jornada "+m.jornada, rival, m.sets, revisionFor("liga", m.id), matchScheduleText(m));
       }).join("")
     : '<p class="loading-note">Todavía no tenéis partidos de liga.</p>';
   var bracketHtml = myBracketMatches.map(function(o){
@@ -784,6 +838,7 @@ function renderPlayerDashboard(pair){
     + '<div class="modal-header"><h2>Hola, '+escHtml(pair.j1)+'</h2><button class="modal-close" data-action="close-player" type="button">✕</button></div>'
     + '<div class="modal-body">'
     + '<p style="color:var(--ink-soft);font-size:.9rem;">Pareja: <strong>'+escHtml(label)+'</strong>'+(ui.playerIsOwner?"":' <span class="badge" style="background:var(--signal-tint);color:var(--signal);">Acompañante</span>')+'</p>'
+    + renderProfileLinks(pair, rankingRows)
     + (ui.playerSubmitMsg ? '<div class="status-banner">'+escHtml(ui.playerSubmitMsg)+'</div>' : "")
     + '<h4 style="margin-top:1.2rem;">Liga</h4>' + ligaHtml
     + (myBracketMatches.length ? '<h4 style="margin-top:1.4rem;">Cuadros</h4>' + bracketHtml : "")
@@ -791,11 +846,12 @@ function renderPlayerDashboard(pair){
     + '<button class="btn btn-ghost" style="margin-top:1.4rem;border-color:var(--border);color:var(--ink-faint);" data-action="player-logout" type="button">Cerrar sesión</button>'
     + '</div></div></div>';
 }
-function renderPlayerMatchRow(mySide, tipo, matchId, roundId, etiqueta, rival, sets, rev){
+function renderPlayerMatchRow(mySide, tipo, matchId, roundId, etiqueta, rival, sets, rev, schedule){
   sets = sets || [];
   var idBase = "pr-"+tipo+"-"+matchId;
   if (rev && rev.estado === "pendiente"){
     return '<div class="bracket-edit-row"><div class="bracket-edit-teams">'+escHtml(etiqueta)+' · vs '+escHtml(rival)+'</div>'
+      + (schedule ? '<div class="match-meta">'+escHtml(schedule)+'</div>' : "")
       + '<span class="badge badge--pending">Enviado, pendiente de revisión</span></div>';
   }
   var setsHtml = [1,2,3].map(function(n){
@@ -809,6 +865,7 @@ function renderPlayerMatchRow(mySide, tipo, matchId, roundId, etiqueta, rival, s
   }).join("");
   return '<div class="bracket-edit-row">'
     + '<div class="bracket-edit-teams">'+escHtml(etiqueta)+' <span class="vs">vs</span> '+escHtml(rival)+'</div>'
+    + (schedule ? '<div class="match-meta">'+escHtml(schedule)+'</div>' : "")
     + (rev && rev.estado==="rechazada" ? '<p style="color:var(--danger);font-size:.8rem;margin-bottom:.5rem;">Vuestro envío anterior fue rechazado por el organizador — revisad el resultado y volved a enviarlo.</p>' : "")
     + '<div class="bracket-edit-sets">'+setsHtml+'</div>'
     + '<div class="bracket-edit-actions"><button class="btn btn-primary btn-sm" data-action="submit-player-result" data-tipo="'+tipo+'" data-id="'+matchId+'" data-round="'+(roundId||"")+'" type="button">Enviar resultado</button></div>'
@@ -961,6 +1018,11 @@ function renderOrgLigaTab(){
           }).join("");
           return '<div class="bracket-edit-row">'
             + '<div class="bracket-edit-teams">'+escHtml(pairLabel(m.pairA))+' <span class="vs">vs</span> '+escHtml(pairLabel(m.pairB))+'</div>'
+            + '<div class="bracket-edit-schedule">'
+            +   '<label class="field"><span>Fecha</span><input type="date" id="match-fecha-'+m.id+'" value="'+(m.fecha||"")+'"></label>'
+            +   '<label class="field"><span>Hora</span><input type="time" id="match-hora-'+m.id+'" value="'+(m.hora||"")+'"></label>'
+            +   '<label class="field"><span>Pista</span><input type="text" id="match-pista-'+m.id+'" value="'+escHtml(m.pista||"")+'" placeholder="Pista 2"></label>'
+            + '</div>'
             + '<div class="bracket-edit-sets">'+setsHtml+'</div>'
             + '<div class="bracket-edit-actions">'
             +   '<button class="btn btn-primary btn-sm" data-action="save-match" data-id="'+m.id+'" type="button">Guardar</button>'
@@ -1041,7 +1103,7 @@ function renderApp(){
   return renderHeader()
     + '<main>' + renderHero() + renderStats() + renderFormato() + renderInscripcion()
     + renderLiga() + renderRanking(rankingRows) + renderCuadros() + renderFAQ() + renderContacto() + '</main>'
-    + renderFooter() + renderRankingUpdateToast() + renderOrganizer() + renderPlayerModal() + renderPlayerProfileModal(rankingRows);
+    + renderFooter() + renderRankingUpdateToast() + renderOrganizer() + renderPlayerModal(rankingRows) + renderPlayerProfileModal(rankingRows);
 }
 /* ============================================================
    Scroll-driven fx engine
@@ -1904,6 +1966,9 @@ function saveMatch(id){
     sets.push({ a: ga, b: gb });
   }
   var beforeRows = (sets.length && STATE.loaded.pairs && STATE.loaded.matches) ? computePlayerRanking() : null;
+  m.fecha = valOf("match-fecha-"+id);
+  m.hora = valOf("match-hora-"+id);
+  m.pista = valOf("match-pista-"+id);
   m.sets = sets;
   m.marcador = sets.map(function(s){ return s.a + "-" + s.b; }).join(", ");
   if (sets.length){
