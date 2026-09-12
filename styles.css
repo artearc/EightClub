@@ -524,17 +524,20 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 .status-pill.rejected{background:rgba(55,61,32,.08);color:var(--ink-faint);}
 .loading-note{color:var(--ink-faint);font-size:.9rem;margin-top:1.6rem;}
 
-/* rules (formato) — two comfortable columns rather than trying to cram all four cards
-   into one cramped row: "Puntuación" and "EIGHT Ranking" hold very different shapes of
-   content (short label/value rows vs. full sentences), and squeezing both down to the
-   same ~240px width made every card wrap into a tall, narrow column of half-words. 2x2
-   gives each card roughly 390px on any desktop width (the content column here is capped
-   well under 1080px by .formato-content's own margin-left, so there's never quite enough
-   room for a genuinely spacious 3-or-4-across row anyway), and collapses to one column
-   on its own via auto-fit once the viewport gets narrow enough — no extra breakpoint
-   needed for mobile. */
-.rules-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.2rem;margin-top:1.8rem;}
+/* rules (formato) — the 3 same-shaped rule-cards (short lists) sit in this grid; the
+   ranking explainer is different content entirely (see .rule-card--wide below) and sits
+   as a full-width row underneath instead of forcing a 4th column here. */
+.rules-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.2rem;margin-top:1.8rem;}
 .rule-card{background:var(--bg-elevated);border-radius:var(--radius-cards);padding:1.7rem 1.8rem;}
+/* the ranking card sits below the 3-column grid rather than inside it (see renderFormato)
+   — as a full-width sibling, 4 short facts read as two short rows instead of a tall
+   single-column list, which is what actually saves the vertical space the 2x2 layout
+   this replaces was spending on the same content. */
+.rule-card--wide{margin-top:1.2rem;}
+.fact-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1.1rem 1.6rem;margin-top:.3rem;}
+.fact-item{display:flex;flex-direction:column;gap:.3rem;}
+.fact-item strong{color:var(--ink);font-weight:600;font-size:.92rem;}
+.fact-item span{color:var(--ink-soft);font-size:.88rem;line-height:1.5;}
 .rule-card h3{font-size:1.7rem;margin-bottom:1rem;}
 .rule-list{display:flex;flex-direction:column;gap:.65rem;font-size:.92rem;color:var(--ink-soft);list-style:none;padding:0;margin:0;}
 .rule-list li{display:flex;justify-content:space-between;align-items:center;gap:.6rem;}
