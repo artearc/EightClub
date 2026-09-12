@@ -333,6 +333,25 @@ function passwordField(id, label, placeholder, autocomplete){
 }
 /* ---------- section renderers ---------- */
 var NAV_LINKS = [["#formato","Formato"],["#inscripcion","Inscripción"],["#liga","Liga"],["#ranking","Ranking"],["#cuadros","Cuadros"],["#faq","FAQ"],["#contacto","Contacto"]];
+/* mobile-only bottom tab bar (see the max-width:640px rules) — the four sections a
+   player mid-tournament, phone in hand, actually needs one thumb-reach away. Reuses the
+   same href values as NAV_LINKS so the scroll-position active-state tracking in applyFx()
+   drives both navs from one querySelectorAll (".header-nav a, .bottom-nav a"). */
+var BOTTOM_NAV_LINKS = [["#inicio","Inicio","home"],["#liga","Liga","liga"],["#ranking","Ranking","ranking"],["#cuadros","Cuadros","cuadros"]];
+function bottomNavIcon(name){
+  var icons = {
+    home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
+    liga: '<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="14" y2="18"/>',
+    ranking: '<line x1="5" y1="20" x2="5" y2="14"/><line x1="12" y1="20" x2="12" y2="9"/><line x1="19" y1="20" x2="19" y2="4"/>',
+    cuadros: '<path d="M8 4H5v16h3"/><path d="M16 4h3v16h-3"/>'
+  };
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(icons[name]||"")+'</svg>';
+}
+function renderBottomNav(){
+  return '<nav class="bottom-nav" aria-label="Navegación rápida">' + BOTTOM_NAV_LINKS.map(function(l){
+    return '<a href="'+l[0]+'">'+bottomNavIcon(l[2])+'<span>'+l[1]+'</span></a>';
+  }).join("") + '</nav>';
+}
 /* the brand isotipo — the user's own vector export (Untitled Project - artboard-1 (1).svg,
    the no-background revision), path data copied verbatim (do not touch the "d"
    coordinates). The only change from the original file is dropping its hardcoded
@@ -1005,7 +1024,7 @@ function renderApp(){
   return renderHeader()
     + '<main>' + renderHero() + renderStats() + renderFormato() + renderInscripcion()
     + renderLiga() + renderRanking(rankingRows) + renderCuadros() + renderFAQ() + renderContacto() + '</main>'
-    + renderFooter() + renderOrganizer() + renderPlayerModal() + renderPlayerProfileModal(rankingRows);
+    + renderFooter() + renderBottomNav() + renderOrganizer() + renderPlayerModal() + renderPlayerProfileModal(rankingRows);
 }
 /* ============================================================
    Scroll-driven fx engine
@@ -1050,7 +1069,7 @@ function collectFx(){
   fx.reveals.forEach(function(el){
     el.dataset.fxDelay = fxSiblingDelay(el);
   });
-  fx.navLinks = Array.prototype.slice.call(document.querySelectorAll(".header-nav a"));
+  fx.navLinks = Array.prototype.slice.call(document.querySelectorAll(".header-nav a, .bottom-nav a"));
   fx.navSections = NAV_LINKS.map(function(l){ return { id:l[0], el:document.querySelector(l[0]) }; });
   heroDotsSetup();
   applyHeroNumHot();
