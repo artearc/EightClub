@@ -289,6 +289,31 @@ table.standings tbody tr:hover{background:var(--bg);}
 table.standings tbody tr:last-child td{border-bottom:none;}
 table.standings tbody tr:first-child td.pts{color:var(--signal);}
 
+/* EIGHT Ranking — individual table (see computePlayerRanking) plus the player-profile
+   modal a name opens into. */
+.rank-delta{display:inline-flex;align-items:center;font-family:var(--font-mono);font-size:.78rem;font-weight:500;white-space:nowrap;}
+.rank-delta--up{color:var(--signal);}
+.rank-delta--down{color:var(--danger);}
+.rank-delta--flat{color:var(--ink-faint);}
+.rank-name{background:none;border:none;padding:0;font:inherit;font-weight:500;color:var(--ink);cursor:pointer;text-align:left;text-underline-offset:3px;}
+.rank-name:hover{color:var(--signal);text-decoration:underline;}
+.form-dots{display:inline-flex;gap:.28rem;}
+.form-dots--empty{color:var(--ink-faint);}
+.form-dot{display:inline-flex;align-items:center;justify-content:center;width:1.15rem;height:1.15rem;border-radius:50%;font-size:.6rem;font-weight:700;color:var(--color-white);}
+.form-dot.win{background:var(--signal);}
+.form-dot.loss{background:var(--danger);}
+.modal-panel--profile{max-width:460px;}
+.profile-stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:.9rem;margin-top:.4rem;}
+.profile-stat{background:var(--bg);border-radius:var(--radius-medium);padding:1rem 1.1rem;}
+.profile-stat-value{font-family:var(--font-display);font-size:1.5rem;color:var(--signal);line-height:1.1;}
+.profile-stat-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-top:.3rem;}
+.profile-line{display:grid;grid-template-columns:repeat(4,auto);gap:.2rem 1.4rem;margin-top:1.4rem;font-size:.85rem;}
+.profile-line span{color:var(--ink-faint);grid-row:1;}
+.profile-line strong{grid-row:2;font-family:var(--font-display);font-size:1.2rem;font-weight:400;color:var(--ink);}
+.h2h-list{display:flex;flex-direction:column;gap:.5rem;margin-top:.7rem;}
+.h2h-row{display:flex;justify-content:space-between;align-items:center;background:var(--bg);border-radius:var(--radius-medium);padding:.6rem .9rem;font-size:.86rem;}
+.h2h-score{font-family:var(--font-display);color:var(--signal);}
+
 /* jornadas / matches */
 .jornadas{margin-top:2.2rem;display:flex;flex-direction:column;gap:1.6rem;}
 .jornada h3{font-family:var(--font-body);font-size:.78rem;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-faint);font-weight:500;margin-bottom:.7rem;}

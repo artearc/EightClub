@@ -102,7 +102,8 @@ var RATE_LIMIT_SECONDS = 20;
 
 const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:"", saveType:"", loginError:false, mobileMenuOpen:false, authUser:null, openFaq:null, showBackTop:false, faqDeleteConfirm:null, solicitudesSubtab:"pendientes", clearHistoryConfirm:false,
   playerModalOpen:false, playerPairId:null, playerIsOwner:false, playerSubmitMsg:"",
-  playerAuthMode:"login", playerAuthError:"", playerAuthBusy:false, playerResetMsg:"", lastRevisionSubmitAt:0 };
+  playerAuthMode:"login", playerAuthError:"", playerAuthBusy:false, playerResetMsg:"", lastRevisionSubmitAt:0,
+  profileSlug:null };
 try {
   ui.playerPairId = localStorage.getItem("eightPlayerPairId") || null;
   ui.playerIsOwner = localStorage.getItem("eightPlayerIsOwner") === "1";
@@ -228,6 +229,91 @@ function computeStandings(){
   return rows;
 }
 
+/* ---------- EIGHT Ranking (individual, derived from liga results) ----------
+   Players aren't stored as their own entities — only as j1/j2 strings on a pair — so a
+   "player" here is identified by a slugified name. That means a typo or a rename across
+   pairs/seasons silently splits or merges identities; acceptable for now since there's no
+   stable player id in the data model. Only liga matches feed the ranking: cuadros matches
+   store free-text labels instead of pair ids (see matchPairsExist), so there's no reliable
+   way to attribute a cuadros result to individual players yet. */
+function slugifyName(name){
+  return String(name || "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+/* Elo, applied per jornada rather than per match: every match in a jornada is scored
+   against ratings as they stood at the START of that jornada, and all the resulting
+   deltas land at once. That keeps the outcome independent of the arbitrary order matches
+   happen to sit in within a jornada (there's no real timestamp to order them by), while
+   still giving a clean "ranking as of last jornada" snapshot to diff the arrows against. */
+function computePlayerRanking(){
+  var RATING_START = 1500, K = 32;
+  var players = {};
+  function ensure(name){
+    var slug = slugifyName(name);
+    if (!slug) return null;
+    if (!players[slug]) players[slug] = { slug:slug, name:name, rating:RATING_START, pj:0, pg:0, pp:0, sf:0, sc:0, form:[] };
+    players[slug].name = name;
+    return players[slug];
+  }
+  var byJornada = {};
+  STATE.matches.filter(function(m){ return m.played; }).filter(matchPairsExist).forEach(function(m){
+    (byJornada[m.jornada] = byJornada[m.jornada] || []).push(m);
+  });
+  var jornadas = Object.keys(byJornada).map(Number).sort(function(a,b){ return a-b; });
+  var prevSnapshot = null;
+  jornadas.forEach(function(j, ji){
+    if (ji === jornadas.length - 1){
+      prevSnapshot = {};
+      Object.keys(players).forEach(function(s){ prevSnapshot[s] = players[s].rating; });
+    }
+    var deltas = {};
+    byJornada[j].forEach(function(m){
+      var pa = pairById(m.pairA), pb = pairById(m.pairB);
+      var pa1 = ensure(pa.j1), pa2 = ensure(pa.j2), pb1 = ensure(pb.j1), pb2 = ensure(pb.j2);
+      var ratingA = (pa1.rating + pa2.rating) / 2, ratingB = (pb1.rating + pb2.rating) / 2;
+      var expA = 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
+      var winA = m.setsA > m.setsB;
+      var delta = K * ((winA ? 1 : 0) - expA);
+      [pa1,pa2].forEach(function(p){ deltas[p.slug] = (deltas[p.slug] || 0) + delta; p.pj++; p.sf+=m.setsA; p.sc+=m.setsB; if (winA) p.pg++; else p.pp++; p.form.push({ jornada:j, win:winA }); });
+      [pb1,pb2].forEach(function(p){ deltas[p.slug] = (deltas[p.slug] || 0) - delta; p.pj++; p.sf+=m.setsB; p.sc+=m.setsA; if (!winA) p.pg++; else p.pp++; p.form.push({ jornada:j, win:!winA }); });
+    });
+    Object.keys(deltas).forEach(function(slug){ players[slug].rating += deltas[slug]; });
+  });
+  var rows = Object.keys(players).map(function(s){
+    var p = players[s];
+    var prevRating = prevSnapshot && (s in prevSnapshot) ? prevSnapshot[s] : p.rating;
+    return { slug:p.slug, name:p.name, rating:Math.round(p.rating), prevRating:Math.round(prevRating),
+      pj:p.pj, pg:p.pg, pp:p.pp, sf:p.sf, sc:p.sc,
+      winRate: p.pj ? Math.round(p.pg / p.pj * 100) : 0, form: p.form.slice(-5) };
+  });
+  rows.sort(function(a,b){ return b.rating - a.rating; });
+  var prevOrder = rows.slice().sort(function(a,b){ return b.prevRating - a.prevRating; });
+  var prevPos = {};
+  prevOrder.forEach(function(r, i){ prevPos[r.slug] = i + 1; });
+  rows.forEach(function(r, i){ r.pos = i + 1; r.prevPos = prevPos[r.slug] || r.pos; r.delta = r.prevPos - r.pos; });
+  return rows;
+}
+function computeHeadToHead(slug){
+  var results = {};
+  STATE.matches.filter(function(m){ return m.played; }).filter(matchPairsExist).forEach(function(m){
+    var pa = pairById(m.pairA), pb = pairById(m.pairB);
+    var inA = [slugifyName(pa.j1), slugifyName(pa.j2)].indexOf(slug) !== -1;
+    var inB = [slugifyName(pb.j1), slugifyName(pb.j2)].indexOf(slug) !== -1;
+    if (!inA && !inB) return;
+    var oppNames = inA ? [pb.j1, pb.j2] : [pa.j1, pa.j2];
+    var won = inA ? m.setsA > m.setsB : m.setsB > m.setsA;
+    oppNames.forEach(function(name){
+      var oslug = slugifyName(name);
+      if (!oslug || oslug === slug) return;
+      if (!results[oslug]) results[oslug] = { slug:oslug, name:name, wins:0, losses:0 };
+      results[oslug].name = name;
+      if (won) results[oslug].wins++; else results[oslug].losses++;
+    });
+  });
+  return Object.keys(results).map(function(k){ return results[k]; })
+    .sort(function(a,b){ return (b.wins+b.losses) - (a.wins+a.losses); });
+}
+
 function emptyState(big, text){
   return '<div class="empty-state"><div class="big">'+escHtml(big)+'</div><p>'+escHtml(text)+'</p></div>';
 }
@@ -246,7 +332,7 @@ function passwordField(id, label, placeholder, autocomplete){
     + '</div>';
 }
 /* ---------- section renderers ---------- */
-var NAV_LINKS = [["#formato","Formato"],["#inscripcion","Inscripción"],["#liga","Liga"],["#cuadros","Cuadros"],["#faq","FAQ"],["#contacto","Contacto"]];
+var NAV_LINKS = [["#formato","Formato"],["#inscripcion","Inscripción"],["#liga","Liga"],["#ranking","Ranking"],["#cuadros","Cuadros"],["#faq","FAQ"],["#contacto","Contacto"]];
 /* the brand isotipo — the user's own vector export (Untitled Project - artboard-1 (1).svg,
    the no-background revision), path data copied verbatim (do not touch the "d"
    coordinates). The only change from the original file is dropping its hardcoded
@@ -353,7 +439,7 @@ function renderFAQ(){
   return '<section id="faq" class="section">'
     + '<img class="faq-player-illustration" src="img/padel-player-4.png" alt="" aria-hidden="true">'
     + '<div class="section-inner">'
-    + '<span class="section-mark" aria-hidden="true">05</span>'
+    + '<span class="section-mark" aria-hidden="true">06</span>'
     + '<p class="eyebrow">Preguntas frecuentes</p><h2 class="section-title">¿Tienes dudas?</h2>'
     + '<div class="faq-list">' + rows + '</div>'
     + '</div></section>';
@@ -439,6 +525,75 @@ function renderMatchRow(m){
     + '<span class="'+(m.played && m.setsB>m.setsA ? "winner":"")+'">'+escHtml(labelB)+'</span>'
     + '<span class="match-result">'+scoreHtml+'</span></li>';
 }
+function renderRankingDelta(r){
+  if (r.delta > 0) return '<span class="rank-delta rank-delta--up">↑ '+r.delta+'</span>';
+  if (r.delta < 0) return '<span class="rank-delta rank-delta--down">↓ '+Math.abs(r.delta)+'</span>';
+  return '<span class="rank-delta rank-delta--flat">—</span>';
+}
+function renderFormDots(form){
+  if (!form.length) return '<span class="form-dots form-dots--empty">—</span>';
+  return '<span class="form-dots">' + form.map(function(f){
+    return '<span class="form-dot'+(f.win?" win":" loss")+'" title="Jornada '+f.jornada+'">'+(f.win?"W":"L")+'</span>';
+  }).join("") + '</span>';
+}
+function renderRankingTable(rows){
+  var body = rows.map(function(r){
+    return '<tr>'
+      + '<td class="num">'+r.pos+'</td>'
+      + '<td>'+renderRankingDelta(r)+'</td>'
+      + '<td><button class="rank-name" data-action="open-player-profile" data-slug="'+escHtml(r.slug)+'" type="button">'+escHtml(r.name)+'</button></td>'
+      + '<td class="num pts">'+r.rating+'</td>'
+      + '<td class="num">'+r.pj+'</td>'
+      + '<td class="num">'+r.winRate+'%</td>'
+      + '<td>'+renderFormDots(r.form)+'</td>'
+      + '</tr>';
+  }).join("");
+  return '<div class="table-wrap"><table class="standings ranking-table"><thead><tr><th>#</th><th>+/-</th><th>Jugador</th><th>Rating</th><th>PJ</th><th>% Vict.</th><th>Forma</th></tr></thead><tbody>'+body+'</tbody></table></div>';
+}
+function renderRanking(rows){
+  if (!STATE.loaded.pairs || !STATE.loaded.matches){
+    return '<section id="ranking" class="section"><div class="section-inner"><p class="eyebrow">Ranking</p><h2 class="section-title">EIGHT Ranking</h2><p class="loading-note">Cargando…</p></div></section>';
+  }
+  var body = rows.length
+    ? renderRankingTable(rows)
+    : emptyState("Todavía no hay ranking", "En cuanto se jueguen partidos de liga, aquí aparecerá la clasificación individual de EIGHT.");
+  return '<section id="ranking" class="section"><div class="section-inner">'
+    + '<span class="section-mark" aria-hidden="true">04</span>'
+    + '<p class="eyebrow">Ranking</p><h2 class="section-title">EIGHT Ranking</h2>'
+    + '<p class="section-lead">La clasificación individual de EIGHT., calculada a partir de todos los resultados de liga. Cada jornada mueve las posiciones — pulsa un nombre para ver su perfil.</p>'
+    + body + '</div></section>';
+}
+function profileStat(label, value){
+  return '<div class="profile-stat"><div class="profile-stat-value">'+value+'</div><div class="profile-stat-label">'+escHtml(label)+'</div></div>';
+}
+function renderH2HList(list){
+  return '<div class="h2h-list">' + list.map(function(h){
+    return '<div class="h2h-row"><span>'+escHtml(h.name)+'</span><span class="h2h-score">'+h.wins+' — '+h.losses+'</span></div>';
+  }).join("") + '</div>';
+}
+function renderPlayerProfileModal(rows){
+  if (!ui.profileSlug) return "";
+  var r = rows.filter(function(x){ return x.slug === ui.profileSlug; })[0];
+  if (!r) return "";
+  var h2h = computeHeadToHead(r.slug);
+  return '<div class="modal-overlay" data-modal="profile"><div class="modal-panel modal-panel--profile">'
+    + '<div class="modal-header"><h2>'+escHtml(r.name)+'</h2><button class="modal-close" data-action="close-player-profile" type="button">✕</button></div>'
+    + '<div class="modal-body">'
+    + '<div class="profile-stats-grid">'
+    +   profileStat("EIGHT Rank", "#"+r.pos)
+    +   profileStat("Forma", renderFormDots(r.form))
+    +   profileStat("% Victorias", r.winRate+"%")
+    +   profileStat("Posiciones", renderRankingDelta(r))
+    + '</div>'
+    + '<div class="profile-line">'
+    +   '<span>Partidos</span><strong>'+r.pj+'</strong>'
+    +   '<span>Ganados</span><strong>'+r.pg+'</strong>'
+    +   '<span>Perdidos</span><strong>'+r.pp+'</strong>'
+    +   '<span>Sets</span><strong>'+r.sf+'-'+r.sc+'</strong>'
+    + '</div>'
+    + (h2h.length ? '<h4 style="margin-top:1.4rem;">Cara a cara</h4>' + renderH2HList(h2h) : "")
+    + '</div></div></div>';
+}
 function renderCuadros(){
   if (!STATE.loaded.bracket){
     return '<section id="cuadros" class="section section--alt"><div class="section-inner"><p class="eyebrow">Cuadros</p><h2 class="section-title">Fase eliminatoria</h2><p class="loading-note">Cargando…</p></div></section>';
@@ -468,7 +623,7 @@ function renderCuadros(){
   return '<section id="cuadros" class="section section--alt">'
     + '<img class="cuadros-player-illustration" src="img/padel-player-3.svg" alt="" aria-hidden="true">'
     + '<div class="section-inner">'
-    + '<span class="section-mark" aria-hidden="true">04</span>'
+    + '<span class="section-mark" aria-hidden="true">05</span>'
     + '<div class="cuadros-content">'
     + '<p class="eyebrow">Cuadros</p><h2 class="section-title">Fase eliminatoria</h2>'
     + '<p class="section-lead">Tras la fase de liga, las parejas pasan a los cuadros eliminatorios hasta la final.</p>'
@@ -476,7 +631,7 @@ function renderCuadros(){
 }
 function renderContacto(){
   return '<section id="contacto" class="section"><div class="section-inner">'
-    + '<span class="section-mark" aria-hidden="true">06</span>'
+    + '<span class="section-mark" aria-hidden="true">07</span>'
     + '<p class="eyebrow">Contacto</p><h2 class="section-title">¿Dudas sobre EIGHT.?</h2>'
     + '<p class="section-lead">Escríbenos y te respondemos en menos de 24 horas.</p>'
     + '<div class="contact-actions">'
@@ -846,10 +1001,11 @@ function renderOrgFaqTab(){
 
 /* ---------- app root ---------- */
 function renderApp(){
+  var rankingRows = (STATE.loaded.pairs && STATE.loaded.matches) ? computePlayerRanking() : [];
   return renderHeader()
     + '<main>' + renderHero() + renderStats() + renderFormato() + renderInscripcion()
-    + renderLiga() + renderCuadros() + renderFAQ() + renderContacto() + '</main>'
-    + renderFooter() + renderOrganizer() + renderPlayerModal();
+    + renderLiga() + renderRanking(rankingRows) + renderCuadros() + renderFAQ() + renderContacto() + '</main>'
+    + renderFooter() + renderOrganizer() + renderPlayerModal() + renderPlayerProfileModal(rankingRows);
 }
 /* ============================================================
    Scroll-driven fx engine
@@ -1300,6 +1456,21 @@ function resolveOwnerPair(){
 }
 function openPlayerModal(){ ui.playerModalOpen = true; ui.playerAuthError = ""; ui.playerSubmitMsg = ""; ui.playerResetMsg = ""; ui.playerAuthMode = "login"; mount(); }
 function closePlayerModal(){ ui.playerModalOpen = false; mount(); }
+/* the profile hash is what makes a ranking row shareable as its own link (see the
+   popstate listener and the initial hash check near the bottom of the file, by mount()) —
+   pushState rather than location.hash so it doesn't also try to scroll to an element
+   matching that id. */
+function openPlayerProfile(slug){
+  if (!slug) return;
+  ui.profileSlug = slug;
+  history.pushState({ profileSlug:slug }, "", "#jugador/"+slug);
+  mount();
+}
+function closePlayerProfile(){
+  ui.profileSlug = null;
+  if (location.hash.indexOf("#jugador/") === 0) history.pushState({}, "", location.pathname + location.search);
+  mount();
+}
 function setPlayerAuthMode(mode){ ui.playerAuthMode = mode; ui.playerAuthError = ""; ui.playerResetMsg = ""; mount(); }
 
 function tryPlayerLogin(){
@@ -1852,7 +2023,10 @@ function rejectRequest(id){
 /* ---------- events ---------- */
 document.addEventListener("click", function(e){
   if (e.target.classList && e.target.classList.contains("modal-overlay")){
-    if (e.target.getAttribute("data-modal") === "player") closePlayerModal(); else closeOrganizer();
+    var modalKind = e.target.getAttribute("data-modal");
+    if (modalKind === "player") closePlayerModal();
+    else if (modalKind === "profile") closePlayerProfile();
+    else closeOrganizer();
     return;
   }
   var el = e.target.closest("[data-action]");
@@ -1913,6 +2087,8 @@ document.addEventListener("click", function(e){
     case "reject-revision": rejectRevision(id); break;
     case "regenerate-pin": regeneratePin(id); break;
     case "org-generate-companion-pin": orgGenerateCompanionPin(id); break;
+    case "open-player-profile": openPlayerProfile(el.getAttribute("data-slug")); break;
+    case "close-player-profile": closePlayerProfile(); break;
   }
 });
 document.addEventListener("keydown", function(e){
@@ -2023,6 +2199,15 @@ if (backToTopBtn){
     window.scrollTo({ top:0, behavior:"smooth" });
   });
 }
+
+/* lets a shared profile link (#jugador/<slug>) open straight into that profile, and the
+   back/forward buttons close it the way the browser's history would suggest they should. */
+function syncProfileFromHash(){
+  var m = location.hash.match(/^#jugador\/(.+)$/);
+  ui.profileSlug = m ? decodeURIComponent(m[1]) : null;
+}
+syncProfileFromHash();
+window.addEventListener("popstate", function(){ syncProfileFromHash(); mount(); });
 
 mount();
 </script>
