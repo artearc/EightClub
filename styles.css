@@ -526,6 +526,14 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 
 /* rules (formato) */
 .rules-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.2rem;margin-top:1.8rem;}
+/* with 4 rule-cards, auto-fit's 240px minimum only ever fits 3 across (the content
+   column here is capped well under 1080px by .formato-content's own margin-left), so the
+   4th always fell to an orphaned row by itself. Past 1300px there's clearly room to use
+   differently — not more absolute space, just enough to justify one tidy row of 4 instead
+   of a lonely single card floating below three wider ones. */
+@media (min-width:1300px){
+  .rules-grid{grid-template-columns:repeat(4,1fr);}
+}
 .rule-card{background:var(--bg-elevated);border-radius:var(--radius-cards);padding:1.7rem 1.8rem;}
 .rule-card h3{font-size:1.7rem;margin-bottom:1rem;}
 .rule-list{display:flex;flex-direction:column;gap:.65rem;font-size:.92rem;color:var(--ink-soft);list-style:none;padding:0;margin:0;}
