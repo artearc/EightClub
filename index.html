@@ -559,7 +559,7 @@ function renderStandingsTable(rows){
   var body = rows.map(function(r, idx){
     return '<tr><td class="num">'+(idx+1)+'</td><td>'+escHtml(r.label)+'</td><td class="num">'+r.pj+'</td><td class="num">'+r.pg+'</td><td class="num">'+r.pp+'</td><td class="num">'+r.sf+'-'+r.sc+'</td><td class="num">'+(r.dif>0?"+":"")+r.dif+'</td><td class="num">'+(r.gdif>0?"+":"")+r.gdif+'</td><td class="num pts">'+r.pts+'</td></tr>';
   }).join("");
-  return '<div class="table-wrap"><table class="standings"><thead><tr><th>#</th><th>Pareja</th><th>PJ</th><th>PG</th><th>PP</th><th>Sets</th><th>Dif sets</th><th>Dif juegos</th><th>Pts</th></tr></thead><tbody>'+body+'</tbody></table></div>';
+  return '<div class="table-wrap"><table class="standings"><thead><tr><th class="num">#</th><th>Pareja</th><th class="num">PJ</th><th class="num">PG</th><th class="num">PP</th><th class="num">Sets</th><th class="num">Dif sets</th><th class="num">Dif juegos</th><th class="num">Pts</th></tr></thead><tbody>'+body+'</tbody></table></div>';
 }
 function matchPairsExist(m){ return !!pairById(m.pairA) && !!pairById(m.pairB); }
 /* "¿cuándo y dónde juego?" shouldn't require asking the organizer on WhatsApp — fecha/
@@ -627,7 +627,7 @@ function renderRankingTable(rows){
       + '<td>'+renderFormDots(r.form)+'</td>'
       + '</tr>';
   }).join("");
-  return '<div class="table-wrap"><table class="standings ranking-table"><thead><tr><th>#</th><th>+/-</th><th>Jugador</th><th>Rating</th><th>PJ</th><th>% Vict.</th><th>Forma</th></tr></thead><tbody>'+body+'</tbody></table></div>';
+  return '<div class="table-wrap"><table class="standings ranking-table"><thead><tr><th class="num">#</th><th>+/-</th><th>Jugador</th><th class="num">Rating</th><th class="num">PJ</th><th class="num">% Vict.</th><th>Forma</th></tr></thead><tbody>'+body+'</tbody></table></div>';
 }
 function renderRanking(rows){
   if (!STATE.loaded.pairs || !STATE.loaded.matches){

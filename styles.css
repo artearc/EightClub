@@ -282,7 +282,8 @@ input,textarea,select{font:inherit;color:inherit;}
 table.standings{border-collapse:collapse;width:100%;min-width:640px;}
 table.standings th,table.standings td{padding:.7rem .9rem;text-align:left;border-bottom:1px solid rgba(55,61,32,.1);font-size:.88rem;}
 table.standings th{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint);font-weight:500;}
-table.standings td.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--font-display);font-weight:400;letter-spacing:.02em;}
+table.standings th.num,table.standings td.num{text-align:right;}
+table.standings td.num{font-variant-numeric:tabular-nums;font-family:var(--font-display);font-weight:400;letter-spacing:.02em;}
 table.standings td.pts{font-weight:500;color:var(--ink);}
 table.standings tbody tr{transition:background .15s;}
 table.standings tbody tr:hover{background:var(--bg);}
