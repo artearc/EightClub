@@ -329,7 +329,7 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 .ranking-toast--down .ranking-toast-delta{color:var(--danger);}
 @keyframes rankingToastIn{from{opacity:0;transform:translateX(24px);}to{opacity:1;transform:translateX(0);}}
 @media (max-width:640px){
-  .ranking-toast-stack{top:auto;bottom:calc(5.3rem + env(safe-area-inset-bottom));left:1.2rem;right:1.2rem;}
+  .ranking-toast-stack{left:1.2rem;right:1.2rem;}
   .ranking-toast{min-width:0;}
 }
 
@@ -383,7 +383,6 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
    round is already visible side by side and there's nothing to hint at */
 .bracket-swipe-hint{display:none;}
 .bracket-dots{display:none;}
-.bottom-nav{display:none;}
 
 /* empty state */
 .empty-state{margin-top:2rem;border:1.5px dashed rgba(55,61,32,.2);border-radius:var(--radius-cards);padding:2.4rem 1.8rem;text-align:center;color:var(--ink-soft);}
@@ -485,14 +484,6 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
   .bracket-dots{display:flex;justify-content:center;gap:.5rem;margin-top:.9rem;}
   .bracket-dot{width:7px;height:7px;border-radius:50%;background:rgba(55,61,32,.18);transition:background .25s var(--ease-out),transform .25s var(--ease-out);}
   .bracket-dot.active{background:var(--signal);transform:scale(1.3);}
-
-  /* bottom tab bar — a player mid-tournament is on court, phone in one hand, wants
-     Liga/Ranking/Cuadros one thumb-reach away instead of hunting for the top nav. */
-  body{padding-bottom:calc(3.9rem + env(safe-area-inset-bottom));}
-  .bottom-nav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:90;background:var(--bg-elevated);box-shadow:0 -8px 20px rgba(55,61,32,.12);padding:.5rem .4rem calc(.5rem + env(safe-area-inset-bottom));}
-  .bottom-nav a{flex:1;display:flex;flex-direction:column;align-items:center;gap:.2rem;padding:.3rem 0;color:var(--ink-faint);font-size:.66rem;font-weight:500;letter-spacing:.02em;transition:color .15s;}
-  .bottom-nav a svg{width:1.25rem;height:1.25rem;}
-  .bottom-nav a.active{color:var(--signal);}
 }
 /* ---------- app-specific additions ---------- */
 .status-banner{background:var(--signal-tint);color:var(--signal);border-radius:var(--radius-medium);padding:.8rem 1.1rem;font-size:.85rem;margin-top:1.6rem;}
@@ -564,12 +555,6 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 .back-to-top.visible{opacity:1;pointer-events:auto;transform:translateY(0);}
 .back-to-top:hover{transform:translateY(-3px);}
 .back-to-top:active{box-shadow:inset 5px 5px 12px rgba(0,0,0,.3),inset -5px -5px 12px rgba(255,255,255,.2);transform:translateY(0);}
-/* clears the fixed bottom-nav bar (see the max-width:640px rules above) — placed after
-   the base rule above so it actually wins the cascade instead of losing to it on source
-   order despite both being inside/outside a media query at equal specificity. */
-@media (max-width:640px){
-  .back-to-top{bottom:calc(5rem + env(safe-area-inset-bottom));}
-}
 
 /* custom cursor — the logo's own green dot, standing in for the pointer. Position is
    set every mousemove with no CSS transition (must track the real cursor with zero lag);
