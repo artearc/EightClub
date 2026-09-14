@@ -149,7 +149,7 @@ input,textarea,select{font:inherit;color:inherit;}
 
 /* header */
 .site-header{position:sticky;top:0;z-index:40;padding:.9rem 0;background:transparent;}
-.header-inner{max-width:1040px;margin:0 auto;padding:.65rem 1.4rem;display:flex;align-items:center;gap:1.5rem;background:transparent;border-radius:var(--radius-pill);border:1px solid transparent;transition:background .3s var(--ease-out),border-color .3s var(--ease-out),box-shadow .3s var(--ease-out);}
+.header-inner{max-width:1100px;margin:0 auto;padding:.65rem 1.4rem;display:flex;align-items:center;gap:1.5rem;background:transparent;border-radius:var(--radius-pill);border:1px solid transparent;transition:background .3s var(--ease-out),border-color .3s var(--ease-out),box-shadow .3s var(--ease-out);}
 .site-header.is-scrolled .header-inner{
   background:var(--glass-sheen),color-mix(in srgb, var(--header-bg) 60%, transparent);
   -webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);
