@@ -318,6 +318,8 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 .rank-pos--3{background:rgba(var(--ink-rgb),.08);color:var(--ink-soft);}
 .ranking-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
 .ranking-head .btn{flex-shrink:0;}
+.ranking-search{display:block;width:100%;max-width:320px;margin-top:1.4rem;border:1.5px solid var(--border);border-radius:var(--radius-inputs);padding:.6rem 1rem;background:var(--surface-input);color:var(--ink);font:inherit;font-size:.9rem;}
+.ranking-search:focus{border-color:var(--signal);background:var(--signal-tint);outline:none;}
 .form-dots{display:inline-flex;gap:.28rem;}
 .form-dots--empty{color:var(--ink-faint);}
 .form-dot{display:inline-flex;align-items:center;justify-content:center;width:1.15rem;height:1.15rem;border-radius:50%;font-size:.6rem;font-weight:700;color:var(--color-white);}
@@ -649,6 +651,24 @@ body::after{
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size:180px 180px;
 }
+
+/* ---------- kiosk / "pantalla del club" ----------
+   #pantalla, opened from the organizer's Info tab — a TV or tablet at the venue on
+   torneo day. Bumping the root font-size (rather than sizing every kiosk rule by hand)
+   is enough on its own: nearly every measurement in this file is in rem, so the whole
+   bracket/table/card system scales up together, keeping its normal proportions instead
+   of needing a parallel "big" version of each component. */
+html.kiosk-mode{font-size:150%;}
+.kiosk-mode #back-to-top,
+.kiosk-mode #cursor-dot{display:none;}
+.kiosk-view{max-width:1400px;margin:0 auto;padding:2.4rem 1.8rem 4rem;}
+.kiosk-brand{display:flex;align-items:center;gap:.5rem;margin-bottom:2.2rem;}
+.kiosk-brand .isotipo{height:1.6rem;width:auto;fill:var(--ink);}
+.kiosk-brand .brand-mark{font-family:var(--font-display);font-size:1.6rem;color:var(--ink);}
+.kiosk-grid{display:grid;grid-template-columns:1fr 1fr;gap:2.4rem;align-items:start;}
+.kiosk-panel h2{font-size:1.8rem;margin-bottom:1.2rem;color:var(--ink);}
+.kiosk-panel table.standings{min-width:0;}
+@media (max-width:1100px){ .kiosk-grid{grid-template-columns:1fr;} }
 
 /* ---------- dark mode ----------
    Toggled by the header's sun/moon button (see toggleTheme() in the main script) via a

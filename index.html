@@ -115,7 +115,7 @@ var RATE_LIMIT_SECONDS = 20;
 const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:"", saveType:"", loginError:false, mobileMenuOpen:false, authUser:null, openFaq:null, showBackTop:false, faqDeleteConfirm:null, solicitudesSubtab:"pendientes", clearHistoryConfirm:false,
   playerModalOpen:false, playerPairId:null, playerIsOwner:false, playerSubmitMsg:"",
   playerAuthMode:"login", playerAuthError:"", playerAuthBusy:false, playerResetMsg:"", lastRevisionSubmitAt:0,
-  profileSlug:null, rankingUpdates:[] };
+  profileSlug:null, rankingUpdates:[], rankingSearch:"" };
 try {
   ui.playerPairId = localStorage.getItem("eightPlayerPairId") || null;
   ui.playerIsOwner = localStorage.getItem("eightPlayerIsOwner") === "1";
@@ -734,9 +734,16 @@ function renderRanking(rows){
   if (!STATE.loaded.pairs || !STATE.loaded.matches){
     return '<section id="ranking" class="section"><div class="section-inner"><p class="eyebrow">Ranking</p><h2 class="section-title">EIGHT Ranking</h2><p class="loading-note">Cargando…</p></div></section>';
   }
-  var body = rows.length
-    ? renderRankingTable(rows)
-    : emptyState("Todavía no hay ranking", "En cuanto se jueguen partidos de liga, aquí aparecerá la clasificación individual de EIGHT.");
+  var query = slugifyName(ui.rankingSearch);
+  var visible = query ? rows.filter(function(r){ return slugifyName(r.name).indexOf(query) !== -1; }) : rows;
+  var body;
+  if (!rows.length){
+    body = emptyState("Todavía no hay ranking", "En cuanto se jueguen partidos de liga, aquí aparecerá la clasificación individual de EIGHT.");
+  } else if (!visible.length){
+    body = emptyState("Sin resultados", "Ningún jugador coincide con “"+ui.rankingSearch+"”.");
+  } else {
+    body = renderRankingTable(visible);
+  }
   return '<section id="ranking" class="section"><div class="section-inner">'
     + '<span class="section-mark" aria-hidden="true">04</span>'
     + '<div class="ranking-head">'
@@ -744,6 +751,7 @@ function renderRanking(rows){
     +   (rows.length ? '<button class="btn btn-outline btn-sm" data-action="share-ranking" type="button">'+shareIconSvg()+' Compartir ranking</button>' : "")
     + '</div>'
     + '<p class="section-lead">La clasificación individual de EIGHT., calculada a partir de todos los resultados de liga y cuadros. Cada partido mueve las posiciones — pulsa un nombre para ver su perfil.</p>'
+    + (rows.length > 5 ? '<input class="ranking-search" id="ranking-search" type="text" placeholder="Buscar jugador…" value="'+escHtml(ui.rankingSearch)+'" autocomplete="off">' : "")
     + body + '</div></section>';
 }
 function profileStat(label, value){
@@ -1079,7 +1087,11 @@ function renderOrgInfoTab(){
   return '<div><div class="form-grid" style="max-width:none;">'
     + labeledInput("info-fechas","Fechas",null,i.fechas) + labeledInput("info-precio","Precio de inscripción",null,i.precio)
     + labeledInput("info-plazo","Plazo de inscripción",null,i.plazo) + labeledInput("info-contacto","Email de contacto",null,i.contacto)
-    + '</div><button class="btn btn-primary btn-sm" style="margin-top:1.2rem;" data-action="save-info" type="button">Guardar información</button></div>';
+    + '</div><button class="btn btn-primary btn-sm" style="margin-top:1.2rem;" data-action="save-info" type="button">Guardar información</button>'
+    + '<div style="margin-top:1.6rem;padding-top:1.2rem;border-top:1px dashed var(--border);">'
+    +   '<p style="color:var(--ink-soft);font-size:.85rem;margin-bottom:.6rem;">Vista para una tele o tablet en el propio club el día de torneo: cuadros y ranking en directo, sin cabecera ni botones.</p>'
+    +   '<a class="btn btn-outline btn-sm" href="#pantalla" target="_blank" rel="noopener">Abrir pantalla del club</a>'
+    + '</div></div>';
 }
 function renderRequestRows(list, withActions){
   return '<div>' + list.map(function(r){
@@ -1241,7 +1253,13 @@ function renderOrgCuadrosTab(){
       +   '<button class="btn btn-outline btn-sm" data-action="add-bracket-match" data-id="'+r.id+'" type="button">Añadir partido</button>'
       + '</div></div>';
   }).join("");
-  return '<div>' + rounds
+  var confirmedPairs = STATE.pairs.filter(function(p){ return p.confirmed; });
+  var seedN = 1; while (seedN * 2 <= confirmedPairs.length) seedN *= 2;
+  var seedHead = confirmedPairs.length >= 2
+    ? '<p style="color:var(--ink-soft);font-size:.9rem;margin-bottom:.7rem;">Genera una ronda nueva emparejando 1º contra '+seedN+'º, 2º contra '+(seedN-1)+'º… según la clasificación de liga actual (usa las '+seedN+' primeras parejas de '+confirmedPairs.length+' confirmadas).</p>'
+      + '<button class="btn btn-outline btn-sm" style="margin-bottom:1.4rem;" data-action="generate-bracket-from-standings" type="button">Generar cuadro desde la liga ('+seedN+' parejas)</button>'
+    : '<p style="color:var(--ink-faint);font-size:.9rem;margin-bottom:1.4rem;">Necesitas al menos 2 parejas confirmadas para poder generar un cuadro desde la clasificación.</p>';
+  return '<div>' + seedHead + rounds
     + '<div class="org-inline-form">'
     +   '<div class="field"><span>Nueva ronda</span><input id="new-round-name" type="text" placeholder="Ej. Cuartos de final"></div>'
     +   '<button class="btn btn-primary btn-sm" data-action="add-round" type="button">Añadir ronda</button>'
@@ -1275,6 +1293,39 @@ function renderApp(){
     + '<main>' + renderHero() + renderStats() + renderFormato() + renderInscripcion()
     + renderLiga() + renderRanking(rankingRows) + renderCuadros() + renderFAQ() + renderContacto() + '</main>'
     + renderFooter() + renderRankingUpdateToast() + renderOrganizer() + renderPlayerModal(rankingRows) + renderPlayerProfileModal(rankingRows);
+}
+/* the venue-screen view (see the "Abrir pantalla del club" link in the organizer's Info
+   tab) — a TV or tablet propped up at Padel Club Alicante Indoor on torneo day, showing
+   cuadros + ranking live with no header, no buttons, and text sized to read from across
+   the room. It's a plain #pantalla hash rather than a real route (see the hashchange
+   listener near the bottom of the file), and reuses the exact same bracket/ranking-table
+   markup and CSS as the normal page so a result posted mid-match shows up here the
+   instant onSnapshot re-mounts it, same as everywhere else on the site. */
+function renderKioskView(){
+  var visibleRounds = sortedRounds().filter(function(r){ return r.matches && r.matches.length; });
+  var bracketBody = visibleRounds.length
+    ? '<div class="bracket'+(visibleRounds.length>1?" bracket--tree":"")+'">' + visibleRounds.map(function(r){
+        return '<div class="bracket-round"><h3>'+escHtml(r.name)+'</h3>' + r.matches.map(function(m){
+          return '<div class="bracket-match fx-reveal">'
+            + '<div class="'+(m.ganador && m.ganador===m.a ? "winner":"")+'">'+escHtml(m.a)+'</div>'
+            + '<div class="'+(m.ganador && m.ganador===m.b ? "winner":"")+'">'+escHtml(m.b)+'</div>'
+            + (m.resultado ? '<div class="bracket-score">'+escHtml(m.resultado)+'</div>' : "")
+            + '</div>';
+        }).join("") + '</div>';
+      }).join("") + '</div>'
+    : emptyState("Cuadros pendientes", "Todavía no se han publicado los cuadros eliminatorios.");
+  var rankingRows = (STATE.loaded.pairs && STATE.loaded.matches) ? computePlayerRanking() : [];
+  var top = rankingRows.slice(0, 8);
+  var rankBody = top.length
+    ? renderRankingTable(top)
+    : emptyState("Ranking pendiente", "En cuanto se jueguen partidos de liga aparecerá aquí.");
+  return '<div class="kiosk-view">'
+    + '<div class="kiosk-brand">'+isotipoSvg()+'<span class="brand-mark">EIGHT<span class="dot">.</span></span></div>'
+    + '<div class="kiosk-grid">'
+    +   '<section class="kiosk-panel"><h2>Cuadros</h2>'+bracketBody+'</section>'
+    +   '<section class="kiosk-panel"><h2>Ranking</h2>'+rankBody+'</section>'
+    + '</div>'
+    + '</div>';
 }
 /* ============================================================
    Scroll-driven fx engine
@@ -1657,11 +1708,32 @@ window.addEventListener("scroll", onScrollFx, { passive:true });
 window.addEventListener("resize", onScrollFx);
 
 function mount(){
-  document.getElementById("app").innerHTML = renderApp();
+  /* every re-render replaces #app's innerHTML wholesale, which would otherwise steal
+     focus (and cursor position) out from under anyone mid-keystroke in a live-filtered
+     input like the ranking search — save it here and restore it onto whatever element
+     shares that id in the freshly rendered markup. */
+  var activeId = document.activeElement && document.activeElement.id;
+  var selStart, selEnd;
+  if (activeId && typeof document.activeElement.selectionStart === "number"){
+    selStart = document.activeElement.selectionStart;
+    selEnd = document.activeElement.selectionEnd;
+  }
+  var isKiosk = location.hash === "#pantalla";
+  document.documentElement.classList.toggle("kiosk-mode", isKiosk);
+  document.getElementById("app").innerHTML = isKiosk ? renderKioskView() : renderApp();
   wireInscripcionForm();
   if (ui.modalOpen && !ui.unlocked){
     var input = document.getElementById("login-password-input");
     if (input) input.focus();
+  }
+  if (activeId){
+    var restored = document.getElementById(activeId);
+    if (restored){
+      restored.focus();
+      if (selStart != null && typeof restored.setSelectionRange === "function"){
+        try { restored.setSelectionRange(selStart, selEnd); } catch(e){}
+      }
+    }
   }
   collectFx();
 }
@@ -2219,6 +2291,36 @@ function addRound(){
   STATE.bracket.push({ id: uid("r"), name:name, matches:[] });
   saveStateDoc("bracket", { rounds: STATE.bracket });
 }
+/* the standard "reflected bracket" seeding order — for n=8 this gives [1,8,4,5,2,7,3,6],
+   read two at a time as match pairs (1v8, 4v5, 2v7, 3v6), which is what keeps seed 1 and
+   seed 2 apart until the final assuming both keep winning. Doubling from n=1 each time
+   mirrors every seed already placed against "one more than the round's top seed minus
+   itself", which is the textbook way to build this without hardcoding a table per size. */
+function bracketSeedOrder(n){
+  var arr = [1];
+  while (arr.length < n){
+    var m = arr.length * 2 + 1;
+    var next = [];
+    arr.forEach(function(s){ next.push(s); next.push(m - s); });
+    arr = next;
+  }
+  return arr;
+}
+function generateBracketFromStandings(){
+  var rows = computeStandings();
+  if (rows.length < 2){ alert("Necesitas al menos 2 parejas confirmadas en la liga."); return; }
+  var n = 1; while (n * 2 <= rows.length) n *= 2;
+  if (STATE.bracket.length && !confirm("Esto añade una ronda nueva con las "+n+" primeras parejas de la clasificación de liga. ¿Continuar?")) return;
+  var roundNames = { 2:"Final", 4:"Semifinal", 8:"Cuartos de final", 16:"Octavos de final", 32:"Dieciseisavos de final" };
+  var order = bracketSeedOrder(n);
+  var matches = [];
+  for (var i = 0; i < n; i += 2){
+    var pairA = rows[order[i] - 1], pairB = rows[order[i+1] - 1];
+    matches.push({ id: uid("bm"), a: pairA.label, b: pairB.label, resultado:"", ganador:"" });
+  }
+  STATE.bracket.push({ id: uid("r"), name: roundNames[n] || (n+" parejas"), matches: matches });
+  saveStateDoc("bracket", { rounds: STATE.bracket });
+}
 function deleteRound(id){
   if (!confirm("¿Eliminar esta ronda y sus partidos?")) return;
   STATE.bracket = STATE.bracket.filter(function(r){ return r.id!==id; });
@@ -2395,6 +2497,7 @@ document.addEventListener("click", function(e){
     case "save-match": saveMatch(id); break;
     case "save-info": saveInfo(); break;
     case "add-round": addRound(); break;
+    case "generate-bracket-from-standings": generateBracketFromStandings(); break;
     case "delete-round": deleteRound(id); break;
     case "add-bracket-match": addBracketMatch(id); break;
     case "delete-bracket-match": deleteBracketMatch(el.getAttribute("data-round"), id); break;
@@ -2437,6 +2540,11 @@ document.addEventListener("keydown", function(e){
     case "player-companion-pin": tryCompanionLogin(); break;
     case "player-reset-email": tryPlayerResetPassword(); break;
   }
+});
+/* live-filters the ranking table as you type — mount() restores this input's own focus
+   and cursor position after the re-render (see mount()), so typing doesn't stutter. */
+document.addEventListener("input", function(e){
+  if (e.target.id === "ranking-search"){ ui.rankingSearch = e.target.value; mount(); }
 });
 document.addEventListener("click", function(e){
   var toggle = e.target.closest(".password-toggle");
@@ -2545,6 +2653,10 @@ function syncProfileFromHash(){
 }
 syncProfileFromHash();
 window.addEventListener("popstate", function(){ syncProfileFromHash(); mount(); });
+/* #pantalla (see renderKioskView) is a plain anchor-style hash, not one pushState puts
+   there, so it needs its own listener — popstate alone wouldn't fire for a visitor
+   typing it into the address bar or opening a link straight to it. */
+window.addEventListener("hashchange", mount);
 
 mount();
 </script>
