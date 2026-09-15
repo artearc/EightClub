@@ -606,6 +606,36 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 .back-to-top:hover{transform:translateY(-3px);}
 .back-to-top:active{box-shadow:inset 5px 5px 12px rgba(0,0,0,.3),inset -5px -5px 12px rgba(255,255,255,.2);transform:translateY(0);}
 
+/* camiseta vote — a temporary poll (see renderCamisetaModal/renderCamisetaFab), so it
+   deliberately reuses the existing modal/button vocabulary instead of inventing its own,
+   the same way the ranking toast reuses the card+shadow language rather than a new one. */
+.camiseta-fab{position:fixed;left:1.4rem;bottom:1.4rem;z-index:60;display:inline-flex;align-items:center;gap:.5rem;padding:.7rem 1.1rem;border-radius:var(--radius-pill);border:none;cursor:pointer;background:linear-gradient(145deg, color-mix(in srgb, var(--danger) 100%, white 12%), color-mix(in srgb, var(--danger) 100%, black 8%));color:var(--color-white);font-size:.86rem;font-weight:600;box-shadow:9px 9px 20px rgba(0,0,0,.26),-9px -9px 20px rgba(255,255,255,.3);transition:transform .18s var(--ease-out),box-shadow .18s var(--ease-out);}
+.camiseta-fab:hover{transform:translateY(-2px);}
+.camiseta-fab:active{transform:translateY(1px) scale(.98);box-shadow:inset 5px 5px 12px rgba(0,0,0,.3),inset -5px -5px 12px rgba(255,255,255,.2);}
+.camiseta-fab svg{width:1.15rem;height:1.15rem;flex-shrink:0;}
+@media (max-width:640px){ .camiseta-fab span{display:none;} .camiseta-fab{padding:.7rem;} }
+
+.modal-panel--camiseta{max-width:420px;}
+.camiseta-carousel{display:flex;align-items:center;gap:.6rem;}
+.camiseta-slide-wrap{position:relative;flex:1;border-radius:var(--radius-medium);overflow:hidden;background:var(--bg);}
+.camiseta-slide{display:block;width:100%;height:auto;max-height:60vh;object-fit:contain;}
+.camiseta-voted-badge{position:absolute;top:.6rem;right:.6rem;background:var(--signal);color:var(--color-white);font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:.25rem .6rem;border-radius:var(--radius-pill);}
+.camiseta-nav{flex-shrink:0;width:2.2rem;height:2.2rem;border-radius:50%;border:none;background:var(--signal-tint);color:var(--signal);font-size:1.4rem;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s;}
+.camiseta-nav:hover{background:var(--signal);color:var(--color-white);}
+.camiseta-dots{display:flex;justify-content:center;gap:.4rem;margin-top:.9rem;}
+.camiseta-dot{width:7px;height:7px;border-radius:50%;background:rgba(var(--ink-rgb),.2);transition:background .2s,transform .2s;}
+.camiseta-dot.active{background:var(--signal);transform:scale(1.3);}
+.camiseta-slide-name{text-align:center;font-weight:600;margin-top:.7rem;}
+
+.camiseta-admin-row{display:flex;align-items:center;gap:.9rem;background:var(--bg);border-radius:var(--radius-medium);padding:.7rem .9rem;margin-bottom:.6rem;border:1.5px solid transparent;}
+.camiseta-admin-row.leading{border-color:var(--signal);}
+.camiseta-admin-thumb{width:3.6rem;height:3.6rem;border-radius:var(--radius-small);object-fit:cover;flex-shrink:0;background:var(--bg-elevated);}
+.camiseta-admin-info{flex:1;min-width:0;}
+.camiseta-admin-info strong{display:block;font-size:.92rem;margin-bottom:.3rem;}
+.camiseta-admin-bar{height:6px;border-radius:99px;background:rgba(var(--ink-rgb),.1);overflow:hidden;}
+.camiseta-admin-bar span{display:block;height:100%;background:var(--signal);border-radius:99px;transition:width .3s var(--ease-out);}
+.camiseta-admin-info small{display:block;color:var(--ink-faint);font-size:.76rem;margin-top:.3rem;}
+
 /* custom cursor — the logo's own green dot, standing in for the pointer. Position is
    set every mousemove with no CSS transition (must track the real cursor with zero lag);
    the hover "light up" (bigger, padel-ball khaki, glowing) is a separate property with
@@ -745,6 +775,14 @@ html.kiosk-mode{font-size:150%;}
 }
 [data-theme="dark"] .btn-primary:active{
   background:var(--glass-sheen), linear-gradient(135deg, color-mix(in srgb, var(--signal) 40%, transparent), color-mix(in srgb, var(--signal) 20%, transparent));
+}
+[data-theme="dark"] .camiseta-fab{
+  background:var(--glass-sheen), linear-gradient(135deg, color-mix(in srgb, var(--danger) 55%, transparent), color-mix(in srgb, var(--danger) 28%, transparent));
+  color:#fff;
+  border:1px solid rgba(255,255,255,.3);
+}
+[data-theme="dark"] .camiseta-fab:active{
+  background:var(--glass-sheen), linear-gradient(135deg, color-mix(in srgb, var(--danger) 40%, transparent), color-mix(in srgb, var(--danger) 20%, transparent));
 }
 [data-theme="dark"] .cta-band .btn-primary{
   background:var(--glass-sheen), rgba(0,0,0,.22);

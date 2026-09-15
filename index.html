@@ -100,7 +100,7 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 
 const STATE = {
-  loaded: { info:false, pairs:false, matches:false, bracket:false, faqs:false, revisiones:false, pairAccounts:false },
+  loaded: { info:false, pairs:false, matches:false, bracket:false, faqs:false, revisiones:false, pairAccounts:false, camisetas:false, camisetaVotos:false },
   info: { categoria:"Quinta Masculina", sede:"Padel Club Alicante Indoor", fechas:"", precio:"", plazo:"", contacto: CONTACT_EMAIL },
   pairs: [],
   matches: [],
@@ -108,17 +108,21 @@ const STATE = {
   faqs: DEFAULT_FAQS.slice(),
   inscripciones: [],
   revisiones: [],
-  pairAccounts: []
+  pairAccounts: [],
+  camisetas: [],
+  camisetaVotos: []
 };
 var RATE_LIMIT_SECONDS = 20;
 
 const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:"", saveType:"", loginError:false, mobileMenuOpen:false, authUser:null, openFaq:null, showBackTop:false, faqDeleteConfirm:null, solicitudesSubtab:"pendientes", clearHistoryConfirm:false,
   playerModalOpen:false, playerPairId:null, playerIsOwner:false, playerSubmitMsg:"",
   playerAuthMode:"login", playerAuthError:"", playerAuthBusy:false, playerResetMsg:"", lastRevisionSubmitAt:0,
-  profileSlug:null, rankingUpdates:[], rankingSearch:"" };
+  profileSlug:null, rankingUpdates:[], rankingSearch:"",
+  camisetaModalOpen:false, camisetaIndex:0, camisetaVoted:null, camisetaUploadBusy:false };
 try {
   ui.playerPairId = localStorage.getItem("eightPlayerPairId") || null;
   ui.playerIsOwner = localStorage.getItem("eightPlayerIsOwner") === "1";
+  ui.camisetaVoted = localStorage.getItem("eightCamisetaVoto") || null;
 } catch(e){}
 
 /* applied as early as possible (before the first mount(), before Firebase even finishes
@@ -892,6 +896,39 @@ function renderFooter(){
    estado:"pendiente" (plus a rate-limit stamp, see submitPlayerResult), and only an
    organizer's accept-revision/reject-revision action ever touches the real match data —
    mirroring exactly how the public inscripción form already works. */
+function renderCamisetaModal(){
+  if (!ui.camisetaModalOpen || !STATE.camisetas.length) return "";
+  var idx = ((ui.camisetaIndex % STATE.camisetas.length) + STATE.camisetas.length) % STATE.camisetas.length;
+  var d = STATE.camisetas[idx];
+  var already = !!ui.camisetaVoted;
+  var multi = STATE.camisetas.length > 1;
+  return '<div class="modal-overlay" data-modal="camisetas"><div class="modal-panel modal-panel--camiseta">'
+    + '<div class="modal-header"><h2>Vota la camiseta</h2><button class="modal-close" data-action="close-camisetas" type="button">✕</button></div>'
+    + '<div class="modal-body">'
+    + (already
+        ? '<div class="status-banner">¡Gracias por votar! Ya hemos registrado tu elección — puedes seguir mirando el resto de diseños.</div>'
+        : '<p style="color:var(--ink-soft);font-size:.9rem;margin-bottom:1rem;">Vamos a imprimir camisetas para repartir en los torneos — elige tu diseño favorito. Un voto por persona.</p>')
+    + '<div class="camiseta-carousel">'
+    +   (multi ? '<button class="camiseta-nav camiseta-nav--prev" data-action="camiseta-prev" type="button" aria-label="Diseño anterior">‹</button>' : "")
+    +   '<div class="camiseta-slide-wrap"><img class="camiseta-slide" src="'+d.imagenData+'" alt="'+escHtml(d.nombre||"Diseño de camiseta")+'">'
+    +     (ui.camisetaVoted === d.id ? '<span class="camiseta-voted-badge">Tu voto</span>' : "")
+    +   '</div>'
+    +   (multi ? '<button class="camiseta-nav camiseta-nav--next" data-action="camiseta-next" type="button" aria-label="Siguiente diseño">›</button>' : "")
+    + '</div>'
+    + (multi ? '<div class="camiseta-dots">' + STATE.camisetas.map(function(c, i){ return '<span class="camiseta-dot'+(i===idx?" active":"")+'"></span>'; }).join("") + '</div>' : "")
+    + (d.nombre ? '<p class="camiseta-slide-name">'+escHtml(d.nombre)+'</p>' : "")
+    + (!already
+        ? '<button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:1rem;" data-action="vote-camiseta" data-id="'+d.id+'" type="button">Votar por este diseño</button>'
+        : "")
+    + '</div></div></div>';
+}
+function renderCamisetaFab(){
+  if (!STATE.loaded.camisetas || !STATE.camisetas.length || ui.camisetaModalOpen) return "";
+  return '<button class="camiseta-fab" data-action="open-camisetas" type="button">'
+    + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4 4 8l3 3 1-1v9h8v-9l1 1 3-3-4-4-3 2h-2Z"/></svg>'
+    + '<span>'+(ui.camisetaVoted ? "Ver camisetas" : "Vota la camiseta")+'</span>'
+    + '</button>';
+}
 function renderPlayerModal(rankingRows){
   if (!ui.playerModalOpen) return "";
   var pair = ui.playerPairId ? pairById(ui.playerPairId) : null;
@@ -1066,7 +1103,7 @@ function renderOrganizer(){
   }
   var pendingCount = STATE.inscripciones.filter(function(r){ return r.status==="pending"; }).length;
   var pendingRevCount = STATE.revisiones.filter(function(r){ return r.estado==="pendiente"; }).length;
-  var tabs = [["info","Información"],["solicitudes","Solicitudes"+(pendingCount?" ("+pendingCount+")":"")],["parejas","Parejas"],["liga","Liga"],["cuadros","Cuadros"],["revisiones","Revisiones"+(pendingRevCount?" ("+pendingRevCount+")":"")],["faqs","FAQ"]];
+  var tabs = [["info","Información"],["solicitudes","Solicitudes"+(pendingCount?" ("+pendingCount+")":"")],["parejas","Parejas"],["liga","Liga"],["cuadros","Cuadros"],["revisiones","Revisiones"+(pendingRevCount?" ("+pendingRevCount+")":"")],["faqs","FAQ"],["camisetas","Camisetas"]];
   return '<div class="modal-overlay" data-modal="organizer"><div class="modal-panel">'
     + '<div class="modal-header"><h2>Panel de organizador</h2><button class="modal-close" data-action="close-organizer" type="button">✕</button></div>'
     + '<div class="tabs">' + tabs.map(function(t){ return '<button class="tab-btn'+(ui.tab===t[0]?" active":"")+'" data-action="set-tab" data-tab="'+t[0]+'" type="button">'+t[1]+'</button>'; }).join("") + '</div>'
@@ -1078,6 +1115,7 @@ function renderOrganizer(){
     + (ui.tab==="cuadros" ? renderOrgCuadrosTab() : "")
     + (ui.tab==="revisiones" ? renderOrgRevisionesTab() : "")
     + (ui.tab==="faqs" ? renderOrgFaqTab() : "")
+    + (ui.tab==="camisetas" ? renderOrgCamisetasTab() : "")
     + '<div class="save-status'+(ui.saveType?" "+ui.saveType:"")+'">'+escHtml(ui.saveMsg)+'</div>'
     + '<button class="btn btn-ghost" style="margin-top:.6rem;border-color:var(--border);color:var(--ink-faint);" data-action="relock" type="button">Cerrar sesión de organizador</button>'
     + '</div></div></div>';
@@ -1285,6 +1323,35 @@ function renderOrgFaqTab(){
     +   '<button class="btn btn-primary btn-sm" data-action="add-faq" type="button">Añadir pregunta</button>'
     + '</div></div>';
 }
+function renderOrgCamisetasTab(){
+  if (!STATE.loaded.camisetas || !STATE.loaded.camisetaVotos) return '<p class="loading-note">Cargando…</p>';
+  var counts = camisetaVoteCounts();
+  var totalVotes = STATE.camisetaVotos.length;
+  var maxVotes = Math.max.apply(null, [0].concat(STATE.camisetas.map(function(d){ return counts[d.id] || 0; })));
+  var ordered = STATE.camisetas.slice().sort(function(a, b){ return (counts[b.id]||0) - (counts[a.id]||0); });
+  var rows = ordered.map(function(d){
+    var v = counts[d.id] || 0;
+    var pct = totalVotes ? Math.round(v / totalVotes * 100) : 0;
+    var barPct = maxVotes ? Math.round(v / maxVotes * 100) : 0;
+    return '<div class="camiseta-admin-row'+(v > 0 && v === maxVotes ? " leading" : "")+'">'
+      + '<img class="camiseta-admin-thumb" src="'+d.imagenData+'" alt="">'
+      + '<div class="camiseta-admin-info">'
+      +   '<strong>'+escHtml(d.nombre || "Sin nombre")+'</strong>'
+      +   '<div class="camiseta-admin-bar"><span style="width:'+barPct+'%;"></span></div>'
+      +   '<small>'+v+' voto'+(v===1?"":"s")+' · '+pct+'%</small>'
+      + '</div>'
+      + '<button class="btn btn-danger btn-sm" data-action="delete-camiseta" data-id="'+d.id+'" type="button">Eliminar</button>'
+      + '</div>';
+  }).join("");
+  return '<div>'
+    + '<p style="color:var(--ink-soft);font-size:.9rem;margin-bottom:1.1rem;">'+totalVotes+' voto'+(totalVotes===1?"":"s")+' en total. El diseño que va ganando se marca en verde.</p>'
+    + (rows || '<p style="color:var(--ink-faint);font-size:.9rem;">Todavía no has añadido ningún diseño.</p>')
+    + '<div class="org-inline-form" style="margin-top:1.2rem;">'
+    +   '<div class="field"><span>Nombre del diseño</span><input id="new-camiseta-nombre" type="text" placeholder="Ej. Terracota"></div>'
+    +   '<div class="field"><span>Imagen</span><input id="new-camiseta-file" type="file" accept="image/*"></div>'
+    +   '<button class="btn btn-primary btn-sm" data-action="add-camiseta" type="button"'+(ui.camisetaUploadBusy?" disabled":"")+'>'+(ui.camisetaUploadBusy?"Subiendo…":"Añadir diseño")+'</button>'
+    + '</div></div>';
+}
 
 /* ---------- app root ---------- */
 function renderApp(){
@@ -1292,7 +1359,7 @@ function renderApp(){
   return renderHeader()
     + '<main>' + renderHero() + renderStats() + renderFormato() + renderInscripcion()
     + renderLiga() + renderRanking(rankingRows) + renderCuadros() + renderFAQ() + renderContacto() + '</main>'
-    + renderFooter() + renderRankingUpdateToast() + renderOrganizer() + renderPlayerModal(rankingRows) + renderPlayerProfileModal(rankingRows);
+    + renderFooter() + renderRankingUpdateToast() + renderCamisetaFab() + renderOrganizer() + renderPlayerModal(rankingRows) + renderPlayerProfileModal(rankingRows) + renderCamisetaModal();
 }
 /* the venue-screen view (see the "Abrir pantalla del club" link in the organizer's Info
    tab) — a TV or tablet propped up at Padel Club Alicante Indoor on torneo day, showing
@@ -1797,6 +1864,86 @@ function resolveOwnerPair(){
 }
 function openPlayerModal(){ ui.playerModalOpen = true; ui.playerAuthError = ""; ui.playerSubmitMsg = ""; ui.playerResetMsg = ""; ui.playerAuthMode = "login"; mount(); }
 function closePlayerModal(){ ui.playerModalOpen = false; mount(); }
+
+/* ---------- camiseta vote (temporary — see the "Camisetas" organizer tab) ----------
+   Public, no login: a vote is just a document in camisetaVotos (create-only from the
+   client, same "anyone can write, only the organizer reads/manages the source data"
+   shape as inscripciones/revisiones). The only thing stopping someone voting twice is
+   this browser's own localStorage flag — not a real guarantee, just enough friction for
+   an honest one-per-person poll among players deciding on a shirt, not a ballot that
+   has to survive someone trying to game it. */
+function camisetaVoteCounts(){
+  var counts = {};
+  STATE.camisetaVotos.forEach(function(v){ counts[v.disenoId] = (counts[v.disenoId] || 0) + 1; });
+  return counts;
+}
+var camisetaAutoOpenChecked = false;
+function maybeAutoOpenCamisetas(){
+  if (camisetaAutoOpenChecked) return;
+  camisetaAutoOpenChecked = true;
+  if (ui.camisetaVoted || !STATE.camisetas.length) return;
+  var seen = false;
+  try { seen = localStorage.getItem("eightCamisetaSeen") === "1"; } catch(e){}
+  if (!seen) ui.camisetaModalOpen = true;
+}
+function openCamisetaModal(){ ui.camisetaModalOpen = true; ui.camisetaIndex = 0; mount(); }
+function closeCamisetaModal(){
+  ui.camisetaModalOpen = false;
+  try { localStorage.setItem("eightCamisetaSeen", "1"); } catch(e){}
+  mount();
+}
+function camisetaPrev(){ if (!STATE.camisetas.length) return; ui.camisetaIndex = (ui.camisetaIndex - 1 + STATE.camisetas.length) % STATE.camisetas.length; mount(); }
+function camisetaNext(){ if (!STATE.camisetas.length) return; ui.camisetaIndex = (ui.camisetaIndex + 1) % STATE.camisetas.length; mount(); }
+function voteCamiseta(disenoId){
+  if (ui.camisetaVoted || !disenoId) return;
+  ui.camisetaVoted = disenoId;
+  try { localStorage.setItem("eightCamisetaVoto", disenoId); localStorage.setItem("eightCamisetaSeen", "1"); } catch(e){}
+  mount();
+  addDoc(collection(db, "camisetaVotos"), { disenoId: disenoId, creadoEn: serverTimestamp() }).catch(function(){});
+}
+/* resizes+re-encodes an uploaded photo client-side before it ever reaches Firestore —
+   a document there is capped at 1MB, and a phone photo straight off a camera roll can
+   clear that on its own before base64 even inflates it by another third. 900px on the
+   long edge is still plenty sharp for a carousel someone's voting in, not for print. */
+function resizeImageFile(file, maxDim, quality){
+  return new Promise(function(resolve, reject){
+    var reader = new FileReader();
+    reader.onload = function(e){
+      var img = new Image();
+      img.onload = function(){
+        var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        var w = Math.max(1, Math.round(img.width * scale)), h = Math.max(1, Math.round(img.height * scale));
+        var canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = function(){ reject(new Error("No se pudo leer la imagen")); };
+      img.src = e.target.result;
+    };
+    reader.onerror = function(){ reject(new Error("No se pudo leer el archivo")); };
+    reader.readAsDataURL(file);
+  });
+}
+function addCamiseta(){
+  var nombre = valOf("new-camiseta-nombre");
+  var fileInput = document.getElementById("new-camiseta-file");
+  var file = fileInput && fileInput.files && fileInput.files[0];
+  if (!file){ alert("Elige una imagen primero."); return; }
+  ui.camisetaUploadBusy = true; mount();
+  resizeImageFile(file, 900, 0.82).then(function(dataUrl){
+    return addDoc(collection(db, "camisetas"), { nombre: nombre, imagenData: dataUrl, orden: Date.now(), creadoEn: serverTimestamp() });
+  }).then(function(){
+    ui.camisetaUploadBusy = false; mount();
+  }).catch(function(err){
+    ui.camisetaUploadBusy = false; mount();
+    alert("No se pudo subir el diseño (" + (err && err.code || err && err.message || "error") + "). Prueba con una imagen más ligera.");
+  });
+}
+function deleteCamiseta(id){
+  if (!confirm("¿Eliminar este diseño de la votación?")) return;
+  deleteDoc(doc(db, "camisetas", id));
+}
 /* the profile hash is what makes a ranking row shareable as its own link (see the
    popstate listener and the initial hash check near the bottom of the file, by mount()) —
    pushState rather than location.hash so it doesn't also try to scroll to an element
@@ -2462,6 +2609,7 @@ document.addEventListener("click", function(e){
     var modalKind = e.target.getAttribute("data-modal");
     if (modalKind === "player") closePlayerModal();
     else if (modalKind === "profile") closePlayerProfile();
+    else if (modalKind === "camisetas") closeCamisetaModal();
     else closeOrganizer();
     return;
   }
@@ -2498,6 +2646,13 @@ document.addEventListener("click", function(e){
     case "save-info": saveInfo(); break;
     case "add-round": addRound(); break;
     case "generate-bracket-from-standings": generateBracketFromStandings(); break;
+    case "open-camisetas": openCamisetaModal(); break;
+    case "close-camisetas": closeCamisetaModal(); break;
+    case "camiseta-prev": camisetaPrev(); break;
+    case "camiseta-next": camisetaNext(); break;
+    case "vote-camiseta": voteCamiseta(el.getAttribute("data-id")); break;
+    case "add-camiseta": addCamiseta(); break;
+    case "delete-camiseta": deleteCamiseta(id); break;
     case "delete-round": deleteRound(id); break;
     case "add-bracket-match": addBracketMatch(id); break;
     case "delete-bracket-match": deleteBracketMatch(el.getAttribute("data-round"), id); break;
@@ -2606,6 +2761,24 @@ onSnapshot(collection(db, "pairAccounts"), function(qs){
   resolveOwnerPair();
   mount();
 }, function(){ STATE.loaded.pairAccounts = true; mount(); });
+
+/* the shirt-design vote — public read (everyone browsing needs to see the designs to
+   vote on them), write restricted to the organizer (see addCamiseta/deleteCamiseta and
+   the Firestore rules that gate it, same shape as state/pairs). */
+onSnapshot(collection(db, "camisetas"), function(qs){
+  STATE.camisetas = qs.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
+    .sort(function(a, b){ return (a.orden||0) - (b.orden||0); });
+  STATE.loaded.camisetas = true;
+  maybeAutoOpenCamisetas();
+  mount();
+}, function(){ STATE.loaded.camisetas = true; mount(); });
+/* public create-only — see voteCamiseta(). Read is public too since a vote tally isn't
+   sensitive, which keeps the rules for this collection as simple as inscripciones'. */
+onSnapshot(collection(db, "camisetaVotos"), function(qs){
+  STATE.camisetaVotos = qs.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
+  STATE.loaded.camisetaVotos = true;
+  mount();
+}, function(){ STATE.loaded.camisetaVotos = true; mount(); });
 
 onAuthStateChanged(auth, function(user){
   ui.unlocked = !!(user && user.email === ADMIN_EMAIL);
