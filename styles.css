@@ -738,6 +738,14 @@ html.kiosk-mode{font-size:150%;}
 
 /* glass buttons — same recipe as .hero-actions/.is-scrolled: a blurred, saturated,
    see-through fill behind a bright thin rim, instead of the light-mode neumorphic pair. */
+/* glass LOOK without the glass COST: backdrop-filter is a live blur sample of whatever
+   sits behind an element, recomputed on basically every paint — fine for the one or two
+   spots that already used it sparingly (the scrolled header, the hero buttons over its
+   gradient), ruinous once it's on every button on the page at once, which is what a first
+   pass at this rule did and is exactly the site-wide "everything feels laggy, the cursor
+   drags" symptom that kind of overuse causes. Same translucent fill + bright rim, no
+   backdrop-filter, reads just as "glass" without asking the browser to blur dozens of
+   regions on every frame. */
 [data-theme="dark"] .btn,
 [data-theme="dark"] .header-lock,
 [data-theme="dark"] .theme-toggle,
@@ -746,9 +754,7 @@ html.kiosk-mode{font-size:150%;}
 [data-theme="dark"] .tab-btn,
 [data-theme="dark"] .subtab-btn,
 [data-theme="dark"] .back-to-top{
-  background:var(--glass-sheen), rgba(255,255,255,.07);
-  -webkit-backdrop-filter:var(--glass-blur);
-  backdrop-filter:var(--glass-blur);
+  background:var(--glass-sheen), rgba(255,255,255,.1);
   border:1px solid var(--glass-border);
   box-shadow:0 8px 22px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.1);
   color:var(--ink);

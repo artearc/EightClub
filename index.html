@@ -1925,19 +1925,45 @@ function resizeImageFile(file, maxDim, quality){
     reader.readAsDataURL(file);
   });
 }
+/* keeps shrinking/re-compressing until the result actually fits Firestore's 1MiB-per-
+   document ceiling with real margin to spare (400KB budget, base64 already counted in),
+   instead of gambling on one fixed size/quality and finding out it was still too big
+   only from the write failing. A busy, textured mockup image compresses far worse than a
+   flat-color one at the same pixel size, so a single fixed setting either wastes quality
+   on simple images or isn't enough for detailed ones — this adapts to whichever it is. */
+function resizeImageFileUnderLimit(file, maxBytes){
+  var attempts = [[900,.82],[820,.7],[720,.6],[620,.5],[520,.42],[420,.35]];
+  function tryAt(i){
+    if (i >= attempts.length) return Promise.reject(new Error("La imagen sigue pesando demasiado incluso muy reducida — prueba con otro archivo."));
+    return resizeImageFile(file, attempts[i][0], attempts[i][1]).then(function(dataUrl){
+      if (dataUrl.length * 0.75 <= maxBytes) return dataUrl;
+      return tryAt(i + 1);
+    });
+  }
+  return tryAt(0);
+}
 function addCamiseta(){
   var nombre = valOf("new-camiseta-nombre");
   var fileInput = document.getElementById("new-camiseta-file");
   var file = fileInput && fileInput.files && fileInput.files[0];
   if (!file){ alert("Elige una imagen primero."); return; }
   ui.camisetaUploadBusy = true; mount();
-  resizeImageFile(file, 900, 0.82).then(function(dataUrl){
+  resizeImageFileUnderLimit(file, 400000).then(function(dataUrl){
     return addDoc(collection(db, "camisetas"), { nombre: nombre, imagenData: dataUrl, orden: Date.now(), creadoEn: serverTimestamp() });
   }).then(function(){
     ui.camisetaUploadBusy = false; mount();
   }).catch(function(err){
     ui.camisetaUploadBusy = false; mount();
-    alert("No se pudo subir el diseño (" + (err && err.code || err && err.message || "error") + "). Prueba con una imagen más ligera.");
+    var code = err && err.code;
+    var msg;
+    if (code === "permission-denied"){
+      msg = "Firestore ha rechazado el permiso para guardar el diseño — probablemente falten las reglas de la colección \"camisetas\" en la consola de Firebase todavía.";
+    } else if (code){
+      msg = "No se pudo subir el diseño (" + code + ").";
+    } else {
+      msg = "No se pudo subir el diseño: " + (err && err.message || "error desconocido") + ".";
+    }
+    alert(msg);
   });
 }
 function deleteCamiseta(id){
