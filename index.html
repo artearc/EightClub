@@ -118,7 +118,7 @@ const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:
   playerModalOpen:false, playerPairId:null, playerIsOwner:false, playerSubmitMsg:"",
   playerAuthMode:"login", playerAuthError:"", playerAuthBusy:false, playerResetMsg:"", lastRevisionSubmitAt:0,
   profileSlug:null, rankingUpdates:[], rankingSearch:"",
-  camisetaModalOpen:false, camisetaIndex:0, camisetaVoted:null, camisetaUploadBusy:false };
+  camisetaModalOpen:false, camisetaIndex:0, camisetaVoted:null, camisetaUploadBusy:false, camisetaView:"carousel" };
 try {
   ui.playerPairId = localStorage.getItem("eightPlayerPairId") || null;
   ui.playerIsOwner = localStorage.getItem("eightPlayerIsOwner") === "1";
@@ -896,19 +896,17 @@ function renderFooter(){
    estado:"pendiente" (plus a rate-limit stamp, see submitPlayerResult), and only an
    organizer's accept-revision/reject-revision action ever touches the real match data —
    mirroring exactly how the public inscripción form already works. */
-function renderCamisetaModal(){
-  if (!ui.camisetaModalOpen || !STATE.camisetas.length) return "";
+function renderCamisetaGridIcon(){
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>';
+}
+function renderCamisetaExpandIcon(){
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>';
+}
+function renderCamisetaSlide(){
   var idx = ((ui.camisetaIndex % STATE.camisetas.length) + STATE.camisetas.length) % STATE.camisetas.length;
   var d = STATE.camisetas[idx];
-  var already = !!ui.camisetaVoted;
   var multi = STATE.camisetas.length > 1;
-  return '<div class="modal-overlay" data-modal="camisetas"><div class="modal-panel modal-panel--camiseta">'
-    + '<div class="modal-header"><h2>Vota la camiseta</h2><button class="modal-close" data-action="close-camisetas" type="button">✕</button></div>'
-    + '<div class="modal-body">'
-    + (already
-        ? '<div class="status-banner">¡Gracias por votar! Ya hemos registrado tu elección — puedes seguir mirando el resto de diseños.</div>'
-        : '<p style="color:var(--ink-soft);font-size:.9rem;margin-bottom:1rem;">Vamos a imprimir camisetas para repartir en los torneos — elige tu diseño favorito. Un voto por persona.</p>')
-    + '<div class="camiseta-carousel">'
+  return '<div class="camiseta-carousel">'
     +   (multi ? '<button class="camiseta-nav camiseta-nav--prev" data-action="camiseta-prev" type="button" aria-label="Diseño anterior">‹</button>' : "")
     +   '<div class="camiseta-slide-wrap"><img class="camiseta-slide" src="'+d.imagenData+'" alt="'+escHtml(d.nombre||"Diseño de camiseta")+'">'
     +     (ui.camisetaVoted === d.id ? '<span class="camiseta-voted-badge">Tu voto</span>' : "")
@@ -917,9 +915,36 @@ function renderCamisetaModal(){
     + '</div>'
     + (multi ? '<div class="camiseta-dots">' + STATE.camisetas.map(function(c, i){ return '<span class="camiseta-dot'+(i===idx?" active":"")+'"></span>'; }).join("") + '</div>' : "")
     + (d.nombre ? '<p class="camiseta-slide-name">'+escHtml(d.nombre)+'</p>' : "")
-    + (!already
+    + (!ui.camisetaVoted
         ? '<button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:1rem;" data-action="vote-camiseta" data-id="'+d.id+'" type="button">Votar por este diseño</button>'
+        : "");
+}
+function renderCamisetaGrid(){
+  return '<div class="camiseta-grid">' + STATE.camisetas.map(function(d, i){
+    return '<button class="camiseta-grid-item" data-action="open-camiseta-detail" data-index="'+i+'" type="button">'
+      +   '<img src="'+d.imagenData+'" alt="'+escHtml(d.nombre||"Diseño de camiseta")+'">'
+      +   (ui.camisetaVoted === d.id ? '<span class="camiseta-voted-badge camiseta-voted-badge--grid">Tu voto</span>' : "")
+      +   (d.nombre ? '<span class="camiseta-grid-name">'+escHtml(d.nombre)+'</span>' : "")
+      + '</button>';
+  }).join("") + '</div>';
+}
+function renderCamisetaModal(){
+  if (!ui.camisetaModalOpen || !STATE.camisetas.length) return "";
+  var already = !!ui.camisetaVoted;
+  var multi = STATE.camisetas.length > 1;
+  var isGrid = multi && ui.camisetaView === "grid";
+  return '<div class="modal-overlay" data-modal="camisetas"><div class="modal-panel modal-panel--camiseta'+(isGrid?" modal-panel--camiseta-grid":"")+'">'
+    + '<div class="modal-header"><h2>Vota la camiseta</h2><button class="modal-close" data-action="close-camisetas" type="button">✕</button></div>'
+    + '<div class="modal-body">'
+    + (already
+        ? '<div class="status-banner">¡Gracias por votar! Ya hemos registrado tu elección — puedes seguir mirando el resto de diseños.</div>'
+        : '<p style="color:var(--ink-soft);font-size:.9rem;margin-bottom:1rem;">Vamos a imprimir camisetas para repartir en los torneos — elige tu diseño favorito. Un voto por persona.</p>')
+    + (multi
+        ? '<button class="camiseta-view-toggle" data-action="toggle-camiseta-view" type="button">'
+          + (isGrid ? renderCamisetaExpandIcon()+'Ver de una en una' : renderCamisetaGridIcon()+'Ver todas')
+          + '</button>'
         : "")
+    + (isGrid ? renderCamisetaGrid() : renderCamisetaSlide())
     + '</div></div></div>';
 }
 function renderCamisetaFab(){
@@ -1886,7 +1911,7 @@ function maybeAutoOpenCamisetas(){
   try { seen = localStorage.getItem("eightCamisetaSeen") === "1"; } catch(e){}
   if (!seen) ui.camisetaModalOpen = true;
 }
-function openCamisetaModal(){ ui.camisetaModalOpen = true; ui.camisetaIndex = 0; mount(); }
+function openCamisetaModal(){ ui.camisetaModalOpen = true; ui.camisetaIndex = 0; ui.camisetaView = "carousel"; mount(); }
 function closeCamisetaModal(){
   ui.camisetaModalOpen = false;
   try { localStorage.setItem("eightCamisetaSeen", "1"); } catch(e){}
@@ -1894,6 +1919,14 @@ function closeCamisetaModal(){
 }
 function camisetaPrev(){ if (!STATE.camisetas.length) return; ui.camisetaIndex = (ui.camisetaIndex - 1 + STATE.camisetas.length) % STATE.camisetas.length; mount(); }
 function camisetaNext(){ if (!STATE.camisetas.length) return; ui.camisetaIndex = (ui.camisetaIndex + 1) % STATE.camisetas.length; mount(); }
+function toggleCamisetaView(){ ui.camisetaView = (ui.camisetaView === "grid") ? "carousel" : "grid"; mount(); }
+function openCamisetaDetail(indexStr){
+  var idx = parseInt(indexStr, 10);
+  if (isNaN(idx) || idx < 0 || idx >= STATE.camisetas.length) return;
+  ui.camisetaIndex = idx;
+  ui.camisetaView = "carousel";
+  mount();
+}
 function voteCamiseta(disenoId){
   if (ui.camisetaVoted || !disenoId) return;
   ui.camisetaVoted = disenoId;
@@ -2676,6 +2709,8 @@ document.addEventListener("click", function(e){
     case "close-camisetas": closeCamisetaModal(); break;
     case "camiseta-prev": camisetaPrev(); break;
     case "camiseta-next": camisetaNext(); break;
+    case "toggle-camiseta-view": toggleCamisetaView(); break;
+    case "open-camiseta-detail": openCamisetaDetail(el.getAttribute("data-index")); break;
     case "vote-camiseta": voteCamiseta(el.getAttribute("data-id")); break;
     case "add-camiseta": addCamiseta(); break;
     case "delete-camiseta": deleteCamiseta(id); break;
