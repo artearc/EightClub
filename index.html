@@ -118,7 +118,7 @@ const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:
   playerModalOpen:false, playerPairId:null, playerIsOwner:false, playerSubmitMsg:"",
   playerAuthMode:"login", playerAuthError:"", playerAuthBusy:false, playerResetMsg:"", lastRevisionSubmitAt:0,
   profileSlug:null, rankingUpdates:[], rankingSearch:"",
-  camisetaModalOpen:false, camisetaIndex:0, camisetaVoted:null, camisetaUploadBusy:false, camisetaView:"carousel" };
+  camisetaModalOpen:false, camisetaIndex:0, camisetaVoted:null, camisetaVoteBusy:false, camisetaUploadBusy:false, camisetaView:"carousel" };
 try {
   ui.playerPairId = localStorage.getItem("eightPlayerPairId") || null;
   ui.playerIsOwner = localStorage.getItem("eightPlayerIsOwner") === "1";
@@ -916,7 +916,7 @@ function renderCamisetaSlide(){
     + (multi ? '<div class="camiseta-dots">' + STATE.camisetas.map(function(c, i){ return '<span class="camiseta-dot'+(i===idx?" active":"")+'"></span>'; }).join("") + '</div>' : "")
     + (d.nombre ? '<p class="camiseta-slide-name">'+escHtml(d.nombre)+'</p>' : "")
     + (!ui.camisetaVoted
-        ? '<button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:1rem;" data-action="vote-camiseta" data-id="'+d.id+'" type="button">Votar por este diseño</button>'
+        ? '<button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:1rem;" data-action="vote-camiseta" data-id="'+d.id+'" type="button"'+(ui.camisetaVoteBusy?' disabled':'')+'>'+(ui.camisetaVoteBusy?'Votando…':'Votar por este diseño')+'</button>'
         : "");
 }
 function renderCamisetaGrid(){
@@ -1927,12 +1927,51 @@ function openCamisetaDetail(indexStr){
   ui.camisetaView = "carousel";
   mount();
 }
+/* one vote per person is enforced by keying the vote doc's ID to the voter's own
+   Firebase auth uid (see the anonymous sign-in kicked off in onAuthStateChanged below)
+   and having the Firestore rules refuse to overwrite an existing doc — a real
+   server-side guarantee instead of the old "one addDoc, trust the localStorage flag"
+   version, which anyone could defeat by just clearing site data. It's still tied to
+   this browser/device's anonymous account, so a different browser or a wiped browser
+   profile does get a fresh vote — there's no way around that without requiring login. */
 function voteCamiseta(disenoId){
-  if (ui.camisetaVoted || !disenoId) return;
-  ui.camisetaVoted = disenoId;
-  try { localStorage.setItem("eightCamisetaVoto", disenoId); localStorage.setItem("eightCamisetaSeen", "1"); } catch(e){}
+  if (ui.camisetaVoted || ui.camisetaVoteBusy || !disenoId) return;
+  ui.camisetaVoteBusy = true;
   mount();
-  addDoc(collection(db, "camisetaVotos"), { disenoId: disenoId, creadoEn: serverTimestamp() }).catch(function(){});
+  ensureCamisetaAuthUid().then(function(uid){
+    return setDoc(doc(db, "camisetaVotos", uid), { disenoId: disenoId, creadoEn: serverTimestamp() });
+  }).then(function(){
+    ui.camisetaVoted = disenoId;
+    ui.camisetaVoteBusy = false;
+    try { localStorage.setItem("eightCamisetaVoto", disenoId); localStorage.setItem("eightCamisetaSeen", "1"); } catch(e){}
+    mount();
+  }).catch(function(err){
+    ui.camisetaVoteBusy = false;
+    if (err && err.code === "permission-denied"){
+      /* the account already had a vote doc (e.g. localStorage got cleared but the
+         anonymous account survived) - reconcile instead of showing an error. */
+      reconcileCamisetaVote();
+    } else {
+      alert("No se pudo registrar tu voto. Comprueba tu conexión e inténtalo de nuevo.");
+    }
+    mount();
+  });
+}
+/* mirrors whatever vote doc (if any) already exists under this browser's auth uid into
+   ui.camisetaVoted, so "already voted" survives a cleared localStorage as long as the
+   underlying (usually anonymous) Firebase account is still the same. */
+function reconcileCamisetaVote(){
+  var uid = auth.currentUser && auth.currentUser.uid;
+  if (!uid) return;
+  var mine = STATE.camisetaVotos.filter(function(v){ return v.id === uid; })[0];
+  if (mine && ui.camisetaVoted !== mine.disenoId){
+    ui.camisetaVoted = mine.disenoId;
+    try { localStorage.setItem("eightCamisetaVoto", mine.disenoId); localStorage.setItem("eightCamisetaSeen", "1"); } catch(e){}
+  }
+}
+function ensureCamisetaAuthUid(){
+  if (auth.currentUser) return Promise.resolve(auth.currentUser.uid);
+  return signInAnonymously(auth).then(function(cred){ return cred.user.uid; });
 }
 /* resizes+re-encodes an uploaded photo client-side before it ever reaches Firestore —
    a document there is capped at 1MB, and a phone photo straight off a camera roll can
@@ -2833,17 +2872,24 @@ onSnapshot(collection(db, "camisetas"), function(qs){
   maybeAutoOpenCamisetas();
   mount();
 }, function(){ STATE.loaded.camisetas = true; mount(); });
-/* public create-only — see voteCamiseta(). Read is public too since a vote tally isn't
-   sensitive, which keeps the rules for this collection as simple as inscripciones'. */
+/* doc ID is the voter's auth uid — see voteCamiseta()/reconcileCamisetaVote() and the
+   Firestore rules that key one-vote-per-account enforcement off that ID. Read is public
+   since a vote tally isn't sensitive. */
 onSnapshot(collection(db, "camisetaVotos"), function(qs){
   STATE.camisetaVotos = qs.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
   STATE.loaded.camisetaVotos = true;
+  reconcileCamisetaVote();
   mount();
 }, function(){ STATE.loaded.camisetaVotos = true; mount(); });
 
 onAuthStateChanged(auth, function(user){
   ui.unlocked = !!(user && user.email === ADMIN_EMAIL);
   currentPlayerAuthUser = (user && user.email !== ADMIN_EMAIL) ? user : null;
+  /* every visitor needs a stable identity for the shirt-design vote's one-vote-per-
+     account enforcement (see voteCamiseta) even if they never log into a pair account,
+     so silently fall into an anonymous session when nobody's signed in at all. */
+  if (!user) signInAnonymously(auth).catch(function(){});
+  reconcileCamisetaVote();
   resolveOwnerPair();
   if (ui.unlocked && !inscripcionesUnsub){
     inscripcionesUnsub = onSnapshot(collection(db, "inscripciones"), function(qs){
