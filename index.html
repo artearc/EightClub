@@ -443,8 +443,8 @@ function announceBracketRankingChange(beforeRows, bm){
 function emptyState(big, text){
   return '<div class="empty-state"><div class="big">'+escHtml(big)+'</div><p>'+escHtml(text)+'</p></div>';
 }
-function labeledInput(id,label,placeholder,value){
-  return '<label class="field"><span>'+escHtml(label)+'</span><input id="'+id+'" type="text" placeholder="'+escHtml(placeholder||"")+'" value="'+escHtml(value||"")+'" autocomplete="off"></label>';
+function labeledInput(id,label,placeholder,value,type){
+  return '<label class="field"><span>'+escHtml(label)+'</span><input id="'+id+'" type="'+(type||"text")+'" placeholder="'+escHtml(placeholder||"")+'" value="'+escHtml(value||"")+'" autocomplete="off"></label>';
 }
 /* a password field with a "Ver"/"Ocultar" toggle — see the delegated click listener near
    the other document-level ones, which just flips the input's own type attribute, so this
@@ -607,7 +607,7 @@ function renderInscripcion(){
     + '<form id="inscripcion-form" novalidate><div class="form-grid">'
     +   labeledInput("insc-j1","Jugador 1","Nombre y apellido")
     +   labeledInput("insc-j2","Jugador 2","Nombre y apellido")
-    +   labeledInput("insc-contacto","Teléfono o email de contacto","Para confirmaros la plaza")
+    +   labeledInput("insc-contacto","Email de contacto","Para confirmaros la plaza y enviaros el PIN de acceso","","email")
     +   '<button type="submit" class="btn btn-primary" id="insc-submit-btn">Enviar solicitud de inscripción</button>'
     +   '<div id="insc-error" class="status-banner err" style="display:none;"></div>'
     + '</div></form>'
@@ -1849,12 +1849,6 @@ function mount(){
   collectFx();
 }
 
-function isValidContact(v){
-  var emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  var phoneRe = /^(\+?\d{1,3}[\s-]?)?\d{9}$/;
-  var digitsOnly = v.replace(/[\s-]/g, "");
-  return emailRe.test(v.trim()) || phoneRe.test(digitsOnly);
-}
 function isEmailContact(v){
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || "").trim());
 }
@@ -1897,8 +1891,8 @@ function wireInscripcionForm(){
     var msg = "";
     if (!j1 || !isValidPersonName(j1)) msg = "Escribe un nombre válido para el Jugador 1 (solo letras).";
     else if (!j2 || !isValidPersonName(j2)) msg = "Escribe un nombre válido para el Jugador 2 (solo letras).";
-    else if (!contacto) msg = "Escribe un teléfono o email de contacto.";
-    else if (!isValidContact(contacto)) msg = "Ese contacto no parece un teléfono o email válido. Revísalo.";
+    else if (!contacto) msg = "Escribe un email de contacto.";
+    else if (!isEmailContact(contacto)) msg = "Ese email no parece válido. Revísalo.";
     if (msg){
       errEl.style.display = "block";
       errEl.textContent = msg;
