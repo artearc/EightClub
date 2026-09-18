@@ -38,6 +38,10 @@
   } catch(e){}
 })();
 </script>
+<!-- lets the module script below call emailjs.send(...) to auto-email a pair's PIN
+     (see EMAILJS_* config and sendPinEmail in the module script) — optional, the app
+     works fine without it configured, this just sits unused. -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 </head>
 <body>
 <div id="app"></div>
@@ -70,6 +74,22 @@ const firebaseConfig = {
   appId: "1:443929819536:web:6bc99d62f2ada52f3a1b15"
 };
 
+/* ============================================================
+   2) CONFIGURA AQUÍ EMAILJS (opcional) — para que el PIN de acceso
+   de cada pareja se le mande por email automáticamente en vez de
+   tener que enviarlo tú a mano.
+   1. Crea una cuenta gratis en https://www.emailjs.com
+   2. Conecta tu email (Gmail, Outlook...) como "Service"
+   3. Crea una plantilla ("Template") con estas variables exactas
+      en el cuerpo: {{to_email}}, {{pair_name}}, {{pin}}
+   4. Pega aquí tu Public Key, tu Service ID y tu Template ID
+   Si dejas esto vacío, el envío automático simplemente no hace
+   nada (sin error) — el PIN se genera igual, solo que tendrás que
+   compartirlo tú mismo como hasta ahora. */
+const EMAILJS_PUBLIC_KEY = "";
+const EMAILJS_SERVICE_ID = "";
+const EMAILJS_TEMPLATE_ID = "";
+
 const ADMIN_EMAIL = "alexruicha@gmail.com";
 const CONTACT_EMAIL = "alexruicha@gmail.com";
 const CONTACT_WHATSAPP = "673939455";
@@ -98,6 +118,7 @@ initializeAppCheck(app, {
 });
 const db = getFirestore(app);
 const auth = getAuth(app);
+if (window.emailjs && EMAILJS_PUBLIC_KEY){ try { emailjs.init(EMAILJS_PUBLIC_KEY); } catch(e){} }
 
 const STATE = {
   loaded: { info:false, pairs:false, matches:false, bracket:false, faqs:false, revisiones:false, camisetas:false, camisetaVotos:false },
@@ -1190,8 +1211,10 @@ function renderOrgRevisionesTab(){
 function renderOrgParejasTab(){
   var rows = STATE.pairs.map(function(p){
     var pinInfo = "PIN de acceso: <strong>"+(p.pin?escHtml(p.pin):"sin generar")+"</strong>";
+    var canEmail = p.pin && isEmailContact(p.contacto);
     return '<div class="org-row"><span class="grow"><strong>'+escHtml(p.j1)+' / '+escHtml(p.j2)+'</strong><small>'+escHtml(p.contacto||"sin contacto")+' · '+pinInfo+'</small></span>'
       + '<button class="btn btn-outline btn-sm" data-action="regenerate-pin" data-id="'+p.id+'" type="button">'+(p.pin?"Nuevo PIN":"Generar PIN")+'</button>'
+      + (canEmail ? '<button class="btn btn-outline btn-sm" data-action="resend-pin-email" data-id="'+p.id+'" type="button">Reenviar por email</button>' : "")
       + '<button class="btn btn-sm '+(p.confirmed?"btn-outline":"btn-ghost")+'" style="'+(p.confirmed?"":"border-color:var(--border);color:var(--ink-faint);")+'" data-action="toggle-confirmed" data-id="'+p.id+'" type="button">'+(p.confirmed?"Confirmada":"Marcar confirmada")+'</button>'
       + '<button class="btn btn-danger btn-sm" data-action="delete-pair" data-id="'+p.id+'" type="button">Eliminar</button></div>';
   }).join("");
@@ -1826,6 +1849,24 @@ function isValidContact(v){
   var digitsOnly = v.replace(/[\s-]/g, "");
   return emailRe.test(v.trim()) || phoneRe.test(digitsOnly);
 }
+function isEmailContact(v){
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || "").trim());
+}
+/* auto-emails a pair's PIN via EmailJS (see the EMAILJS_* config at the top) instead of
+   the organizer having to copy it into a WhatsApp/email themselves. Resolves to false
+   (never rejects) whenever it can't send — EmailJS isn't configured, the contact isn't
+   an email, or the request itself fails — so a caller can just show a fallback message
+   ("compártelo a mano") rather than needing its own try/catch. */
+function sendPinEmail(pair){
+  if (!window.emailjs || !EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !isEmailContact(pair.contacto) || !pair.pin){
+    return Promise.resolve(false);
+  }
+  return emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+    to_email: pair.contacto.trim(),
+    pair_name: pair.j1 + " / " + pair.j2,
+    pin: pair.pin
+  }).then(function(){ return true; }).catch(function(){ return false; });
+}
 /* letters (any language), spaces, and the couple of marks real names actually use
    ("Jean-Pierre", "O'Connor") — no digits, no symbols, no emoji. Rejects the kind of
    junk someone can paste into a public no-login form (see the inscripciones rules,
@@ -2362,7 +2403,24 @@ function regeneratePin(id){
   var p = pairById(id);
   if (!p) return;
   p.pin = String(Math.floor(1000 + Math.random() * 9000));
-  saveStateDoc("pairs", { list: STATE.pairs });
+  saveStateDoc("pairs", { list: STATE.pairs }).then(function(){
+    if (!isEmailContact(p.contacto)) return;
+    return sendPinEmail(p).then(function(sent){
+      setSaveResult(sent, sent
+        ? "PIN generado y enviado por email a " + p.contacto + " ✓"
+        : "PIN generado, pero no se pudo enviar el email — compártelo a mano.");
+    });
+  });
+}
+function resendPinEmail(id){
+  var p = pairById(id);
+  if (!p || !p.pin) return;
+  setSaving("Enviando email…");
+  sendPinEmail(p).then(function(sent){
+    setSaveResult(sent, sent
+      ? "PIN reenviado por email a " + p.contacto + " ✓"
+      : "No se pudo enviar el email. Comprueba tu configuración de EmailJS e inténtalo de nuevo.");
+  });
 }
 function tryLogin(){
   var val = valOf("login-password-input");
@@ -2395,8 +2453,16 @@ function saveStateDoc(name, data){
 function addPair(){
   var j1 = valOf("new-pair-j1"), j2 = valOf("new-pair-j2"), contacto = valOf("new-pair-contacto");
   if (!j1 || !j2){ alert("Escribe los nombres de los dos jugadores."); return; }
-  STATE.pairs.push({ id: uid("p"), j1:j1, j2:j2, contacto:contacto, confirmed:true, pin: String(Math.floor(1000 + Math.random() * 9000)) });
-  saveStateDoc("pairs", { list: STATE.pairs });
+  var p = { id: uid("p"), j1:j1, j2:j2, contacto:contacto, confirmed:true, pin: String(Math.floor(1000 + Math.random() * 9000)) };
+  STATE.pairs.push(p);
+  saveStateDoc("pairs", { list: STATE.pairs }).then(function(){
+    if (!isEmailContact(p.contacto)) return;
+    return sendPinEmail(p).then(function(sent){
+      setSaveResult(sent, sent
+        ? "Pareja añadida y PIN enviado por email a " + p.contacto + " ✓"
+        : "Pareja añadida, pero no se pudo enviar el email — comparte el PIN a mano.");
+    });
+  });
 }
 function deletePair(id){
   if (!confirm("¿Eliminar esta pareja?")) return;
@@ -2717,6 +2783,7 @@ document.addEventListener("click", function(e){
     case "accept-revision": acceptRevision(id); break;
     case "reject-revision": rejectRevision(id); break;
     case "regenerate-pin": regeneratePin(id); break;
+    case "resend-pin-email": resendPinEmail(id); break;
     case "open-player-profile": openPlayerProfile(el.getAttribute("data-slug")); break;
     case "close-player-profile": closePlayerProfile(); break;
   }
