@@ -647,6 +647,14 @@ table.standings tbody tr:first-child td.pts{color:var(--signal);}
 .camiseta-admin-bar{height:6px;border-radius:99px;background:rgba(var(--ink-rgb),.1);overflow:hidden;}
 .camiseta-admin-bar span{display:block;height:100%;background:var(--signal);border-radius:99px;transition:width .3s var(--ease-out);}
 .camiseta-admin-info small{display:block;color:var(--ink-faint);font-size:.76rem;margin-top:.3rem;}
+.camiseta-pending-actions{display:flex;gap:.4rem;flex-shrink:0;}
+
+.camiseta-vote-form{margin-top:1rem;}
+.camiseta-voter-name{width:100%;padding:.65rem .85rem;border-radius:var(--radius-medium);border:1.5px solid var(--border);background:var(--bg);color:var(--ink);font-size:.92rem;font-family:inherit;}
+.camiseta-voter-name:focus{outline:none;border-color:var(--signal);}
+.camiseta-vote-error{color:var(--danger);font-size:.78rem;margin-top:.4rem;}
+.camiseta-voted-badge--pending{background:var(--ink-faint);}
+.camiseta-voted-badge--rejected{background:var(--danger);}
 
 /* custom cursor — the logo's own green dot, standing in for the pointer. Position is
    set every mousemove with no CSS transition (must track the real cursor with zero lag);
