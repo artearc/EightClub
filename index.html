@@ -89,6 +89,12 @@ const firebaseConfig = {
 const EMAILJS_PUBLIC_KEY = "RTqmDtvPmvmG-hEST";
 const EMAILJS_SERVICE_ID = "service_w8cy7mi";
 const EMAILJS_TEMPLATE_ID = "template_b10c4u5";
+/* second template (same EmailJS account/service) that emails the organizer whenever a
+   public inscripción form comes in, so checking for pending requests doesn't mean
+   remembering to open the admin panel — its "To Email" is fixed to the club's own
+   address inside the EmailJS template itself, not something this code controls, so
+   nothing here can redirect it elsewhere. Variables: {{j1}}, {{j2}}, {{contacto}}. */
+const EMAILJS_NOTIFY_TEMPLATE_ID = "template_paqvq2l";
 
 const ADMIN_EMAIL = "alexruicha@gmail.com";
 const CONTACT_EMAIL = "alexruicha@gmail.com";
@@ -1867,6 +1873,13 @@ function sendPinEmail(pair){
     pin: pair.pin
   }).then(function(){ return true; }).catch(function(){ return false; });
 }
+/* best-effort "someone just registered" heads-up to the organizer's own inbox — never
+   blocks or fails the actual inscripción, which is why nothing here awaits it or
+   surfaces its result to the visitor filling in the public form. */
+function notifyNewInscripcion(j1, j2, contacto){
+  if (!window.emailjs || !EMAILJS_SERVICE_ID || !EMAILJS_NOTIFY_TEMPLATE_ID) return;
+  emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_NOTIFY_TEMPLATE_ID, { j1: j1, j2: j2, contacto: contacto }).catch(function(){});
+}
 /* letters (any language), spaces, and the couple of marks real names actually use
    ("Jean-Pierre", "O'Connor") — no digits, no symbols, no emoji. Rejects the kind of
    junk someone can paste into a public no-login form (see the inscripciones rules,
@@ -1897,6 +1910,7 @@ function wireInscripcionForm(){
     addDoc(collection(db, "inscripciones"), {
       j1: j1, j2: j2, contacto: contacto, status: "pending", submittedAt: serverTimestamp()
     }).then(function(){
+      notifyNewInscripcion(j1, j2, contacto);
       ui.inscripcionSent = true;
       mount();
     }).catch(function(err){
@@ -2407,7 +2421,7 @@ function regeneratePin(id){
     if (!isEmailContact(p.contacto)) return;
     return sendPinEmail(p).then(function(sent){
       setSaveResult(sent, sent
-        ? "PIN generado y enviado por email a " + p.contacto + " ✓"
+        ? "PIN generado y enviado por email a " + p.contacto + " ✓ — avísales de que puede caer en spam la primera vez."
         : "PIN generado, pero no se pudo enviar el email — compártelo a mano.");
     });
   });
@@ -2418,7 +2432,7 @@ function resendPinEmail(id){
   setSaving("Enviando email…");
   sendPinEmail(p).then(function(sent){
     setSaveResult(sent, sent
-      ? "PIN reenviado por email a " + p.contacto + " ✓"
+      ? "PIN reenviado por email a " + p.contacto + " ✓ — avísales de que puede caer en spam la primera vez."
       : "No se pudo enviar el email. Comprueba tu configuración de EmailJS e inténtalo de nuevo.");
   });
 }
@@ -2459,7 +2473,7 @@ function addPair(){
     if (!isEmailContact(p.contacto)) return;
     return sendPinEmail(p).then(function(sent){
       setSaveResult(sent, sent
-        ? "Pareja añadida y PIN enviado por email a " + p.contacto + " ✓"
+        ? "Pareja añadida y PIN enviado por email a " + p.contacto + " ✓ — avísales de que puede caer en spam la primera vez."
         : "Pareja añadida, pero no se pudo enviar el email — comparte el PIN a mano.");
     });
   });
@@ -2660,16 +2674,29 @@ function deleteFaq(id){
   STATE.faqs = STATE.faqs.filter(function(f){ return f.id!==id; });
   saveStateDoc("faqs", { list: STATE.faqs });
 }
+/* one click does the whole job: create the pair, give it a PIN straight away, and
+   (when the contact looks like an email) send that PIN — instead of accepting the
+   request here and then having to separately remember to go generate a PIN from the
+   Parejas tab. */
 function acceptRequest(id){
   var r = STATE.inscripciones.filter(function(x){ return x.id===id; })[0];
   if (!r) return;
-  STATE.pairs.push({ id: uid("p"), j1:r.j1, j2:r.j2, contacto:r.contacto, confirmed:true });
+  var p = { id: uid("p"), j1:r.j1, j2:r.j2, contacto:r.contacto, confirmed:true, pin: String(Math.floor(1000 + Math.random() * 9000)) };
+  STATE.pairs.push(p);
   setSaving("Guardando…");
   Promise.all([
     setDoc(doc(db,"state","pairs"), { list: STATE.pairs }),
     updateDoc(doc(db,"inscripciones", id), { status: "accepted" })
   ]).then(function(){
-    setSaveResult(true, "Pareja añadida y solicitud aceptada ✓");
+    if (!isEmailContact(p.contacto)){
+      setSaveResult(true, "Pareja añadida y solicitud aceptada ✓");
+      return;
+    }
+    return sendPinEmail(p).then(function(sent){
+      setSaveResult(sent, sent
+        ? "Pareja aceptada y PIN enviado por email a " + p.contacto + " ✓ — avísales de que puede caer en spam la primera vez."
+        : "Pareja aceptada, pero no se pudo enviar el email — comparte el PIN a mano.");
+    });
   }).catch(function(){
     setSaveResult(false, "No se pudo aceptar la solicitud. Inténtalo de nuevo.");
   });
