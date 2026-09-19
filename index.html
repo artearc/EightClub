@@ -1017,6 +1017,17 @@ function renderCamisetaGrid(){
 }
 function renderCamisetaModal(){
   if (!ui.camisetaModalOpen || !STATE.camisetas.length) return "";
+  var multi = STATE.camisetas.length > 1;
+  var isGrid = multi && ui.camisetaView === "grid";
+  return '<div class="modal-overlay" data-modal="camisetas"><div class="modal-panel modal-panel--camiseta'+(isGrid?" modal-panel--camiseta-grid":"")+'" id="camiseta-panel">'
+    + '<div class="modal-header"><h2>Vota la camiseta</h2><button class="modal-close" data-action="close-camisetas" type="button">✕</button></div>'
+    + '<div class="modal-body" id="camiseta-body">' + renderCamisetaBody() + '</div>'
+    + '</div></div>';
+}
+/* everything that can change while browsing designs (switching slide, toggling grid) —
+   split out of renderCamisetaModal so navigating never touches the modal-panel node
+   itself, see mountCamisetaBody for why that matters. */
+function renderCamisetaBody(){
   var already = !!ui.camisetaVoted;
   var votingOpen = STATE.info.camisetasVotacionAbierta !== false;
   var multi = STATE.camisetas.length > 1;
@@ -1028,10 +1039,7 @@ function renderCamisetaModal(){
         ? '<div class="status-banner err">Tu voto no se pudo validar. Si crees que es un error, escríbenos.</div>'
         : '<div class="status-banner">¡Gracias por votar! Tu voto queda pendiente de validación por el organizador.</div>')
     : '<div class="status-banner err">La votación está cerrada. Gracias por vuestro interés.</div>';
-  return '<div class="modal-overlay" data-modal="camisetas"><div class="modal-panel modal-panel--camiseta'+(isGrid?" modal-panel--camiseta-grid":"")+'">'
-    + '<div class="modal-header"><h2>Vota la camiseta</h2><button class="modal-close" data-action="close-camisetas" type="button">✕</button></div>'
-    + '<div class="modal-body">'
-    + (already || !votingOpen
+  return (already || !votingOpen
         ? banner
         : '<p style="color:var(--ink-soft);font-size:.9rem;margin-bottom:1rem;">Vamos a imprimir camisetas para repartir en los torneos — elige tu diseño favorito y escribe tu nombre para votar. Un voto por persona.</p>')
     + (multi
@@ -1039,8 +1047,7 @@ function renderCamisetaModal(){
           + (isGrid ? renderCamisetaExpandIcon()+'Ver de una en una' : renderCamisetaGridIcon()+'Ver todas')
           + '</button>'
         : "")
-    + (isGrid ? renderCamisetaGrid() : renderCamisetaSlide())
-    + '</div></div></div>';
+    + (isGrid ? renderCamisetaGrid() : renderCamisetaSlide());
 }
 function renderCamisetaFab(){
   if (!STATE.loaded.camisetas || !STATE.camisetas.length || ui.camisetaModalOpen) return "";
@@ -1529,14 +1536,19 @@ function renderApp(){
 }
 /* browsing between designs (prev/next, grid<->single) used to go through the global
    mount(), which rebuilds the ENTIRE page — header, liga tables, the embedded Google
-   Maps iframe, everything — just to swap which shirt image is showing. That full
-   teardown/rebuild is exactly what read as "the page reloads" every time you flipped to
-   the next design. None of camisetaPrev/camisetaNext/toggleCamisetaView/
-   openCamisetaDetail touch anything outside the modal (see camiseta-modal-root above),
-   so they re-render only that container instead. */
-function mountCamisetaModal(){
-  var root = document.getElementById("camiseta-modal-root");
-  if (root) root.innerHTML = renderCamisetaModal();
+   Maps iframe, everything — just to swap which shirt image is showing. Scoping that
+   down to just #camiseta-modal-root (see renderApp above) still wasn't enough: it
+   replaced the whole modal-panel node, and .modal-panel has a CSS entrance animation
+   (modalIn) that plays on any element newly inserted into the DOM — so the modal was
+   visibly "popping in" fresh on every single click, which read exactly like a reload.
+   This only touches #camiseta-body (renderCamisetaBody), leaving the modal-panel node
+   that carries that animation untouched — the grid/carousel width classes are the one
+   thing that lived on that outer node, so those get toggled directly instead. */
+function mountCamisetaBody(){
+  var body = document.getElementById("camiseta-body");
+  if (body) body.innerHTML = renderCamisetaBody();
+  var panel = document.getElementById("camiseta-panel");
+  if (panel) panel.classList.toggle("modal-panel--camiseta-grid", STATE.camisetas.length > 1 && ui.camisetaView === "grid");
 }
 /* the venue-screen view (see the "Abrir pantalla del club" link in the organizer's Info
    tab) — a TV or tablet propped up at Padel Club Alicante Indoor on torneo day, showing
@@ -2110,16 +2122,16 @@ function captureCamisetaNombreDraft(){
   var el = document.getElementById("camiseta-voter-name");
   if (el) ui.camisetaNombreDraft = el.value;
 }
-function camisetaPrev(){ if (!STATE.camisetas.length) return; captureCamisetaNombreDraft(); ui.camisetaIndex = (ui.camisetaIndex - 1 + STATE.camisetas.length) % STATE.camisetas.length; mountCamisetaModal(); }
-function camisetaNext(){ if (!STATE.camisetas.length) return; captureCamisetaNombreDraft(); ui.camisetaIndex = (ui.camisetaIndex + 1) % STATE.camisetas.length; mountCamisetaModal(); }
-function toggleCamisetaView(){ captureCamisetaNombreDraft(); ui.camisetaView = (ui.camisetaView === "grid") ? "carousel" : "grid"; mountCamisetaModal(); }
+function camisetaPrev(){ if (!STATE.camisetas.length) return; captureCamisetaNombreDraft(); ui.camisetaIndex = (ui.camisetaIndex - 1 + STATE.camisetas.length) % STATE.camisetas.length; mountCamisetaBody(); }
+function camisetaNext(){ if (!STATE.camisetas.length) return; captureCamisetaNombreDraft(); ui.camisetaIndex = (ui.camisetaIndex + 1) % STATE.camisetas.length; mountCamisetaBody(); }
+function toggleCamisetaView(){ captureCamisetaNombreDraft(); ui.camisetaView = (ui.camisetaView === "grid") ? "carousel" : "grid"; mountCamisetaBody(); }
 function openCamisetaDetail(indexStr){
   var idx = parseInt(indexStr, 10);
   if (isNaN(idx) || idx < 0 || idx >= STATE.camisetas.length) return;
   captureCamisetaNombreDraft();
   ui.camisetaIndex = idx;
   ui.camisetaView = "carousel";
-  mountCamisetaModal();
+  mountCamisetaBody();
 }
 /* the doc ID being the voter's own auth uid (see ensureCamisetaAuthUid) only stops a
    second vote from this same browser/account — see the block comment above
