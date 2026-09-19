@@ -97,7 +97,7 @@ const EMAILJS_TEMPLATE_ID = "template_b10c4u5";
 const EMAILJS_NOTIFY_TEMPLATE_ID = "template_paqvq2l";
 
 const ADMIN_EMAIL = "alexruicha@gmail.com";
-const CONTACT_EMAIL = "alexruicha@gmail.com";
+const CONTACT_EMAIL = "eightclub.padel@gmail.com";
 const CONTACT_WHATSAPP = "673939455";
 const CONTACT_WHATSAPP_LINK = "https://wa.me/34" + CONTACT_WHATSAPP;
 const CONTACT_WHATSAPP_LABEL = "673 93 94 55";
@@ -143,8 +143,8 @@ var RATE_LIMIT_SECONDS = 20;
 const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:"", saveType:"", loginError:false, mobileMenuOpen:false, authUser:null, openFaq:null, showBackTop:false, faqDeleteConfirm:null, solicitudesSubtab:"pendientes", clearHistoryConfirm:false,
   playerModalOpen:false, playerPairId:null, playerSubmitMsg:"",
   playerAuthError:"", playerAuthBusy:false, lastRevisionSubmitAt:0,
-  profileSlug:null, rankingUpdates:[], rankingSearch:"",
-  camisetaModalOpen:false, camisetaIndex:0, camisetaVoted:null, camisetaVoteEstado:null, camisetaVoteError:"", camisetaVoteBusy:false, camisetaUploadBusy:false, camisetaView:"carousel" };
+  profileSlug:null, rankingUpdates:[], rankingSearch:"", cuadrosTorneo:null,
+  camisetaModalOpen:false, camisetaIndex:0, camisetaVoted:null, camisetaVoteEstado:null, camisetaVoteError:"", camisetaVoteBusy:false, camisetaUploadBusy:false, camisetaView:"carousel", camisetaNombreDraft:"" };
 try {
   ui.playerPairId = localStorage.getItem("eightPlayerPairId") || null;
   ui.camisetaVoted = localStorage.getItem("eightCamisetaVoto") || null;
@@ -218,6 +218,25 @@ function sortedRounds(){
       return d !== 0 ? d : x.i - y.i;
     })
     .map(function(o){ return o.r; });
+}
+/* rounds created before this feature existed have no torneo field at all — rather than
+   a data migration, they just read as "Summer Series" (the one the organizer actually
+   said this history belongs to) everywhere a torneo name is needed. Anything created
+   from here on always gets an explicit one (see addRound/generateBracketFromStandings),
+   so this fallback only ever applies to that pre-existing data. */
+function roundTorneo(r){ return (r && r.torneo) || "Summer Series"; }
+/* distinct torneo names across the whole bracket, most-recently-used first (rounds are
+   appended over time, so scanning from the end and keeping first-seen order surfaces
+   "whatever tournament is being played right now" before older, finished ones) — this
+   is what picks the default selection in both the public Cuadros section and the admin
+   tab's grouping. */
+function distinctTorneos(){
+  var seen = [];
+  for (var i = STATE.bracket.length - 1; i >= 0; i--){
+    var t = roundTorneo(STATE.bracket[i]);
+    if (seen.indexOf(t) === -1) seen.push(t);
+  }
+  return seen;
 }
 
 function generateRoundRobin(pairs){
@@ -857,7 +876,14 @@ function renderCuadros(){
     return '<section id="cuadros" class="section section--alt"><div class="section-inner"><p class="eyebrow">Cuadros</p><h2 class="section-title">Fase eliminatoria</h2><p class="loading-note">Cargando…</p></div></section>';
   }
   var body;
-  var visibleRounds = sortedRounds().filter(function(r){ return r.matches && r.matches.length; });
+  var torneos = distinctTorneos();
+  var selectedTorneo = (ui.cuadrosTorneo && torneos.indexOf(ui.cuadrosTorneo) !== -1) ? ui.cuadrosTorneo : torneos[0];
+  var torneoTabs = torneos.length > 1
+    ? '<div class="subtabs" style="margin-bottom:1.2rem;">' + torneos.map(function(t){
+        return '<button class="subtab-btn'+(t===selectedTorneo?" active":"")+'" data-action="set-cuadros-torneo" data-torneo="'+escHtml(t)+'" type="button">'+escHtml(t)+'</button>';
+      }).join("") + '</div>'
+    : "";
+  var visibleRounds = sortedRounds().filter(function(r){ return r.matches && r.matches.length && roundTorneo(r) === selectedTorneo; });
   if (!visibleRounds.length){
     body = emptyState("Cuadros pendientes de publicar", "Los cuadros eliminatorios se publicarán al terminar la fase de liga.");
   } else {
@@ -885,7 +911,7 @@ function renderCuadros(){
     + '<div class="cuadros-content">'
     + '<p class="eyebrow">Cuadros</p><h2 class="section-title">Fase eliminatoria</h2>'
     + '<p class="section-lead">Tras la fase de liga, las parejas pasan a los cuadros eliminatorios hasta la final.</p>'
-    + body + '</div></div></section>';
+    + torneoTabs + body + '</div></div></section>';
 }
 function renderContacto(){
   return '<section id="contacto" class="section"><div class="section-inner">'
@@ -948,7 +974,7 @@ function renderCamisetaSlide(){
     + (d.nombre ? '<p class="camiseta-slide-name">'+escHtml(d.nombre)+'</p>' : "")
     + (!ui.camisetaVoted
         ? '<div class="camiseta-vote-form">'
-          + '<input id="camiseta-voter-name" class="camiseta-voter-name" type="text" placeholder="Tu nombre" maxlength="60" autocomplete="name">'
+          + '<input id="camiseta-voter-name" class="camiseta-voter-name" type="text" placeholder="Tu nombre" maxlength="60" autocomplete="name" value="'+escHtml(ui.camisetaNombreDraft)+'">'
           + (ui.camisetaVoteError ? '<p class="camiseta-vote-error">'+escHtml(ui.camisetaVoteError)+'</p>' : "")
           + '<button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:.6rem;" data-action="vote-camiseta" data-id="'+d.id+'" type="button"'+(ui.camisetaVoteBusy?' disabled':'')+'>'+(ui.camisetaVoteBusy?'Enviando…':'Votar por este diseño')+'</button>'
           + '</div>'
@@ -1129,7 +1155,7 @@ function renderOrganizer(){
   var pendingRevCount = STATE.revisiones.filter(function(r){ return r.estado==="pendiente"; }).length;
   var pendingVoteCount = STATE.camisetaVotos.filter(function(v){ return v.estado==="pendiente"; }).length;
   var tabs = [["info","Información"],["solicitudes","Solicitudes"+(pendingCount?" ("+pendingCount+")":"")],["parejas","Parejas"],["liga","Liga"],["cuadros","Cuadros"],["revisiones","Revisiones"+(pendingRevCount?" ("+pendingRevCount+")":"")],["faqs","FAQ"],["camisetas","Camisetas"+(pendingVoteCount?" ("+pendingVoteCount+")":"")]];
-  return '<div class="modal-overlay" data-modal="organizer"><div class="modal-panel">'
+  return '<div class="modal-overlay" data-modal="organizer"><div class="modal-panel modal-panel--organizer">'
     + '<div class="modal-header"><h2>Panel de organizador</h2><button class="modal-close" data-action="close-organizer" type="button">✕</button></div>'
     + '<div class="tabs">' + tabs.map(function(t){ return '<button class="tab-btn'+(ui.tab===t[0]?" active":"")+'" data-action="set-tab" data-tab="'+t[0]+'" type="button">'+t[1]+'</button>'; }).join("") + '</div>'
     + '<div class="modal-body">'
@@ -1275,52 +1301,67 @@ function renderOrgLigaTab(){
   return '<div>' + head + list + '</div>';
 }
 function renderOrgCuadrosTab(){
-  var rounds = sortedRounds().map(function(r){
-    var matches = r.matches.map(function(m){
-      var options = ['<option value=""'+(m.ganador===""?" selected":"")+'>Pendiente</option>',
-        '<option value="'+escHtml(m.a)+'"'+(m.ganador===m.a?" selected":"")+'>'+escHtml(m.a)+'</option>',
-        '<option value="'+escHtml(m.b)+'"'+(m.ganador===m.b?" selected":"")+'>'+escHtml(m.b)+'</option>'].join("");
-      var sets = m.sets || [];
-      var setsHtml = [1,2,3].map(function(n){
-        var s = sets[n-1] || {};
-        return '<span class="bm-set-label">Set '+n+'</span>'
-          + '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="bm-'+m.id+'-s'+n+'a" placeholder="A" value="'+(s.a!=null?s.a:"")+'">'
-          + '<span class="bm-set-sep">–</span>'
-          + '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="bm-'+m.id+'-s'+n+'b" placeholder="B" value="'+(s.b!=null?s.b:"")+'">';
+  var torneoOptions = distinctTorneos();
+  var torneoDatalist = '<datalist id="torneo-list">' + torneoOptions.map(function(t){ return '<option value="'+escHtml(t)+'">'; }).join("") + '</datalist>';
+  var byTorneo = {};
+  sortedRounds().forEach(function(r){
+    var t = roundTorneo(r);
+    (byTorneo[t] = byTorneo[t] || []).push(r);
+  });
+  var groups = torneoOptions.map(function(t){
+    var roundsHtml = (byTorneo[t] || []).map(function(r){
+      var matches = r.matches.map(function(m){
+        var options = ['<option value=""'+(m.ganador===""?" selected":"")+'>Pendiente</option>',
+          '<option value="'+escHtml(m.a)+'"'+(m.ganador===m.a?" selected":"")+'>'+escHtml(m.a)+'</option>',
+          '<option value="'+escHtml(m.b)+'"'+(m.ganador===m.b?" selected":"")+'>'+escHtml(m.b)+'</option>'].join("");
+        var sets = m.sets || [];
+        var setsHtml = [1,2,3].map(function(n){
+          var s = sets[n-1] || {};
+          return '<span class="bm-set-label">Set '+n+'</span>'
+            + '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="bm-'+m.id+'-s'+n+'a" placeholder="A" value="'+(s.a!=null?s.a:"")+'">'
+            + '<span class="bm-set-sep">–</span>'
+            + '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="bm-'+m.id+'-s'+n+'b" placeholder="B" value="'+(s.b!=null?s.b:"")+'">';
+        }).join("");
+        return '<div class="bracket-edit-row">'
+          + '<div class="bracket-edit-names">'
+          +   '<div class="bracket-edit-side">'+bracketEditSideFields(m,"a","Pareja A")+'</div>'
+          +   '<div class="bracket-edit-side">'+bracketEditSideFields(m,"b","Pareja B")+'</div>'
+          + '</div>'
+          + '<div class="bracket-edit-sets">'+setsHtml+'</div>'
+          + '<div class="bracket-edit-actions">'
+          +   '<select id="bm-ganador-'+m.id+'">'+options+'</select>'
+          +   '<button class="btn btn-primary btn-sm" data-action="save-bracket-match" data-round="'+r.id+'" data-id="'+m.id+'" type="button">Guardar</button>'
+          +   '<button class="btn btn-danger btn-sm" data-action="delete-bracket-match" data-round="'+r.id+'" data-id="'+m.id+'" type="button">✕</button>'
+          + '</div></div>';
       }).join("");
-      return '<div class="bracket-edit-row">'
-        + '<div class="bracket-edit-names">'
-        +   '<div class="bracket-edit-side">'+bracketEditSideFields(m,"a","Pareja A")+'</div>'
-        +   '<div class="bracket-edit-side">'+bracketEditSideFields(m,"b","Pareja B")+'</div>'
-        + '</div>'
-        + '<div class="bracket-edit-sets">'+setsHtml+'</div>'
-        + '<div class="bracket-edit-actions">'
-        +   '<select id="bm-ganador-'+m.id+'">'+options+'</select>'
-        +   '<button class="btn btn-primary btn-sm" data-action="save-bracket-match" data-round="'+r.id+'" data-id="'+m.id+'" type="button">Guardar</button>'
-        +   '<button class="btn btn-danger btn-sm" data-action="delete-bracket-match" data-round="'+r.id+'" data-id="'+m.id+'" type="button">✕</button>'
+      return '<div class="round-block">'
+        + '<div class="round-block-head"><h4>'+escHtml(r.name)+'</h4><button class="btn btn-danger btn-sm" data-action="delete-round" data-id="'+r.id+'" type="button">Eliminar ronda</button></div>'
+        + '<div class="round-torneo-row"><span>Torneo:</span><input id="round-torneo-'+r.id+'" type="text" list="torneo-list" value="'+escHtml(roundTorneo(r))+'"><button class="btn btn-outline btn-sm" data-action="change-round-torneo" data-id="'+r.id+'" type="button">Mover</button></div>'
+        + matches
+        + '<div class="org-inline-form">'
+        +   '<div class="field"><span>Pareja A · Jugador 1</span><input id="new-bm-a1-'+r.id+'" type="text"></div>'
+        +   '<div class="field"><span>Pareja A · Jugador 2</span><input id="new-bm-a2-'+r.id+'" type="text"></div>'
+        +   '<label class="bm-tbd-check"><input type="checkbox" id="new-bm-a-tbd-'+r.id+'">Por definir</label>'
+        +   '<div class="field"><span>Pareja B · Jugador 1</span><input id="new-bm-b1-'+r.id+'" type="text"></div>'
+        +   '<div class="field"><span>Pareja B · Jugador 2</span><input id="new-bm-b2-'+r.id+'" type="text"></div>'
+        +   '<label class="bm-tbd-check"><input type="checkbox" id="new-bm-b-tbd-'+r.id+'">Por definir</label>'
+        +   '<button class="btn btn-outline btn-sm" data-action="add-bracket-match" data-id="'+r.id+'" type="button">Añadir partido</button>'
         + '</div></div>';
     }).join("");
-    return '<div class="round-block"><div class="round-block-head"><h4>'+escHtml(r.name)+'</h4><button class="btn btn-danger btn-sm" data-action="delete-round" data-id="'+r.id+'" type="button">Eliminar ronda</button></div>'
-      + matches
-      + '<div class="org-inline-form">'
-      +   '<div class="field"><span>Pareja A · Jugador 1</span><input id="new-bm-a1-'+r.id+'" type="text"></div>'
-      +   '<div class="field"><span>Pareja A · Jugador 2</span><input id="new-bm-a2-'+r.id+'" type="text"></div>'
-      +   '<label class="bm-tbd-check"><input type="checkbox" id="new-bm-a-tbd-'+r.id+'">Por definir</label>'
-      +   '<div class="field"><span>Pareja B · Jugador 1</span><input id="new-bm-b1-'+r.id+'" type="text"></div>'
-      +   '<div class="field"><span>Pareja B · Jugador 2</span><input id="new-bm-b2-'+r.id+'" type="text"></div>'
-      +   '<label class="bm-tbd-check"><input type="checkbox" id="new-bm-b-tbd-'+r.id+'">Por definir</label>'
-      +   '<button class="btn btn-outline btn-sm" data-action="add-bracket-match" data-id="'+r.id+'" type="button">Añadir partido</button>'
-      + '</div></div>';
+    return '<div class="torneo-group"><h3 class="torneo-group-title">'+escHtml(t)+'</h3>'+roundsHtml+'</div>';
   }).join("");
   var confirmedPairs = STATE.pairs.filter(function(p){ return p.confirmed; });
   var seedN = 1; while (seedN * 2 <= confirmedPairs.length) seedN *= 2;
+  var defaultTorneo = torneoOptions[0] || "Summer Series";
   var seedHead = confirmedPairs.length >= 2
     ? '<p style="color:var(--ink-soft);font-size:.9rem;margin-bottom:.7rem;">Genera una ronda nueva emparejando 1º contra '+seedN+'º, 2º contra '+(seedN-1)+'º… según la clasificación de liga actual (usa las '+seedN+' primeras parejas de '+confirmedPairs.length+' confirmadas).</p>'
+      + '<div class="field" style="max-width:260px;margin-bottom:.7rem;"><span>Torneo del cuadro generado</span><input id="new-bracket-torneo" type="text" list="torneo-list" value="'+escHtml(defaultTorneo)+'"></div>'
       + '<button class="btn btn-outline btn-sm" style="margin-bottom:1.4rem;" data-action="generate-bracket-from-standings" type="button">Generar cuadro desde la liga ('+seedN+' parejas)</button>'
     : '<p style="color:var(--ink-faint);font-size:.9rem;margin-bottom:1.4rem;">Necesitas al menos 2 parejas confirmadas para poder generar un cuadro desde la clasificación.</p>';
-  return '<div>' + seedHead + rounds
+  return '<div>' + torneoDatalist + seedHead + (groups || '<p style="color:var(--ink-faint);font-size:.9rem;">Todavía no hay rondas.</p>')
     + '<div class="org-inline-form">'
     +   '<div class="field"><span>Nueva ronda</span><input id="new-round-name" type="text" placeholder="Ej. Cuartos de final"></div>'
+    +   '<div class="field"><span>Torneo</span><input id="new-round-torneo" type="text" list="torneo-list" value="'+escHtml(defaultTorneo)+'"></div>'
     +   '<button class="btn btn-primary btn-sm" data-action="add-round" type="button">Añadir ronda</button>'
     + '</div></div>';
 }
@@ -1367,7 +1408,7 @@ function renderOrgCamisetasTab(){
       + '</div>';
   }).join("");
   var counts = camisetaVoteCounts();
-  var totalVotes = STATE.camisetaVotos.filter(function(v){ return v.estado === "aprobada"; }).length;
+  var totalVotes = STATE.camisetaVotos.filter(function(v){ return v.estado === "aprobada" || v.estado === undefined; }).length;
   var maxVotes = Math.max.apply(null, [0].concat(STATE.camisetas.map(function(d){ return counts[d.id] || 0; })));
   var ordered = STATE.camisetas.slice().sort(function(a, b){ return (counts[b.id]||0) - (counts[a.id]||0); });
   var rows = ordered.map(function(d){
@@ -1413,7 +1454,11 @@ function renderApp(){
    markup and CSS as the normal page so a result posted mid-match shows up here the
    instant onSnapshot re-mounts it, same as everywhere else on the site. */
 function renderKioskView(){
-  var visibleRounds = sortedRounds().filter(function(r){ return r.matches && r.matches.length; });
+  /* always shows whichever torneo is currently most active (see distinctTorneos) rather
+     than a selector — this view is a passive screen propped up at the venue, nobody's
+     there to click a tab on it. */
+  var kioskTorneo = distinctTorneos()[0];
+  var visibleRounds = sortedRounds().filter(function(r){ return r.matches && r.matches.length && roundTorneo(r) === kioskTorneo; });
   var bracketBody = visibleRounds.length
     ? '<div class="bracket'+(visibleRounds.length>1?" bracket--tree":"")+'">' + visibleRounds.map(function(r){
         return '<div class="bracket-round"><h3>'+escHtml(r.name)+'</h3>' + r.matches.map(function(m){
@@ -1433,7 +1478,7 @@ function renderKioskView(){
   return '<div class="kiosk-view">'
     + '<div class="kiosk-brand">'+isotipoSvg()+'<span class="brand-mark">EIGHT<span class="dot">.</span></span></div>'
     + '<div class="kiosk-grid">'
-    +   '<section class="kiosk-panel"><h2>Cuadros</h2>'+bracketBody+'</section>'
+    +   '<section class="kiosk-panel"><h2>Cuadros'+(kioskTorneo?' · '+escHtml(kioskTorneo):'')+'</h2>'+bracketBody+'</section>'
     +   '<section class="kiosk-panel"><h2>Ranking</h2>'+rankBody+'</section>'
     + '</div>'
     + '</div>';
@@ -1937,22 +1982,36 @@ function closePlayerModal(){ ui.playerModalOpen = false; mount(); }
    revisiones) — that manual look-at-the-name step is what actually stops someone from
    voting several times under different browsers, since the uid-keyed doc only stops a
    second vote from the *same* browser/account. */
+/* votes cast before the pending/approve system existed have no estado field at all —
+   they were counted immediately back then, so treat "no estado" the same as "aprobada"
+   here instead of silently dropping them from the tally now that estado is required. */
 function camisetaVoteCounts(){
   var counts = {};
-  STATE.camisetaVotos.forEach(function(v){ if (v.estado === "aprobada") counts[v.disenoId] = (counts[v.disenoId] || 0) + 1; });
+  STATE.camisetaVotos.forEach(function(v){ if (v.estado === "aprobada" || v.estado === undefined) counts[v.disenoId] = (counts[v.disenoId] || 0) + 1; });
   return counts;
 }
-function openCamisetaModal(){ ui.camisetaModalOpen = true; ui.camisetaIndex = 0; ui.camisetaView = "carousel"; mount(); }
+function openCamisetaModal(){ ui.camisetaModalOpen = true; ui.camisetaIndex = 0; ui.camisetaView = "carousel"; ui.camisetaNombreDraft = ""; mount(); }
 function closeCamisetaModal(){
   ui.camisetaModalOpen = false;
   mount();
 }
-function camisetaPrev(){ if (!STATE.camisetas.length) return; ui.camisetaIndex = (ui.camisetaIndex - 1 + STATE.camisetas.length) % STATE.camisetas.length; mount(); }
-function camisetaNext(){ if (!STATE.camisetas.length) return; ui.camisetaIndex = (ui.camisetaIndex + 1) % STATE.camisetas.length; mount(); }
-function toggleCamisetaView(){ ui.camisetaView = (ui.camisetaView === "grid") ? "carousel" : "grid"; mount(); }
+/* the name field isn't a controlled input (see renderCamisetaSlide) to avoid a mount()
+   on every keystroke — that would re-embed the current design's full-size image on
+   every letter typed, which is exactly the kind of thing the lag fix elsewhere in this
+   file exists to avoid. Instead, whatever's currently typed is pulled out of the DOM
+   right before a full re-render (switching design, toggling grid view) would otherwise
+   wipe it, and re-embedded as the input's value on the next render. */
+function captureCamisetaNombreDraft(){
+  var el = document.getElementById("camiseta-voter-name");
+  if (el) ui.camisetaNombreDraft = el.value;
+}
+function camisetaPrev(){ if (!STATE.camisetas.length) return; captureCamisetaNombreDraft(); ui.camisetaIndex = (ui.camisetaIndex - 1 + STATE.camisetas.length) % STATE.camisetas.length; mount(); }
+function camisetaNext(){ if (!STATE.camisetas.length) return; captureCamisetaNombreDraft(); ui.camisetaIndex = (ui.camisetaIndex + 1) % STATE.camisetas.length; mount(); }
+function toggleCamisetaView(){ captureCamisetaNombreDraft(); ui.camisetaView = (ui.camisetaView === "grid") ? "carousel" : "grid"; mount(); }
 function openCamisetaDetail(indexStr){
   var idx = parseInt(indexStr, 10);
   if (isNaN(idx) || idx < 0 || idx >= STATE.camisetas.length) return;
+  captureCamisetaNombreDraft();
   ui.camisetaIndex = idx;
   ui.camisetaView = "carousel";
   mount();
@@ -1963,6 +2022,7 @@ function openCamisetaDetail(indexStr){
 function voteCamiseta(disenoId){
   if (ui.camisetaVoted || ui.camisetaVoteBusy || !disenoId) return;
   var nombre = valOf("camiseta-voter-name");
+  ui.camisetaNombreDraft = nombre;
   if (!nombre || !isValidPersonName(nombre)){
     ui.camisetaVoteError = "Escribe tu nombre (solo letras) para poder votar.";
     mount();
@@ -2212,7 +2272,7 @@ function getShareInfo(tipo, id, roundId){
     var round = STATE.bracket.filter(function(r){ return r.id === roundId; })[0];
     var m2 = round && round.matches.filter(function(x){ return x.id === id; })[0];
     if (!m2 || !m2.resultado) return null;
-    return { context: round.name, labelA: m2.a, labelB: m2.b, scoreText: m2.resultado, winner: m2.ganador || null };
+    return { context: roundTorneo(round) + " · " + round.name, labelA: m2.a, labelB: m2.b, scoreText: m2.resultado, winner: m2.ganador || null };
   }
   return null;
 }
@@ -2535,7 +2595,8 @@ function saveInfo(){
 function addRound(){
   var name = valOf("new-round-name");
   if (!name){ alert("Ponle un nombre a la ronda (ej. Cuartos de final)."); return; }
-  STATE.bracket.push({ id: uid("r"), name:name, matches:[] });
+  var torneo = valOf("new-round-torneo") || distinctTorneos()[0] || "Summer Series";
+  STATE.bracket.push({ id: uid("r"), name:name, matches:[], torneo:torneo });
   saveStateDoc("bracket", { rounds: STATE.bracket });
 }
 /* the standard "reflected bracket" seeding order — for n=8 this gives [1,8,4,5,2,7,3,6],
@@ -2558,6 +2619,7 @@ function generateBracketFromStandings(){
   if (rows.length < 2){ alert("Necesitas al menos 2 parejas confirmadas en la liga."); return; }
   var n = 1; while (n * 2 <= rows.length) n *= 2;
   if (STATE.bracket.length && !confirm("Esto añade una ronda nueva con las "+n+" primeras parejas de la clasificación de liga. ¿Continuar?")) return;
+  var torneo = valOf("new-bracket-torneo") || distinctTorneos()[0] || "Summer Series";
   var roundNames = { 2:"Final", 4:"Semifinal", 8:"Cuartos de final", 16:"Octavos de final", 32:"Dieciseisavos de final" };
   var order = bracketSeedOrder(n);
   var matches = [];
@@ -2565,12 +2627,20 @@ function generateBracketFromStandings(){
     var pairA = rows[order[i] - 1], pairB = rows[order[i+1] - 1];
     matches.push({ id: uid("bm"), a: pairA.label, b: pairB.label, resultado:"", ganador:"" });
   }
-  STATE.bracket.push({ id: uid("r"), name: roundNames[n] || (n+" parejas"), matches: matches });
+  STATE.bracket.push({ id: uid("r"), name: roundNames[n] || (n+" parejas"), matches: matches, torneo: torneo });
   saveStateDoc("bracket", { rounds: STATE.bracket });
 }
 function deleteRound(id){
   if (!confirm("¿Eliminar esta ronda y sus partidos?")) return;
   STATE.bracket = STATE.bracket.filter(function(r){ return r.id!==id; });
+  saveStateDoc("bracket", { rounds: STATE.bracket });
+}
+function changeRoundTorneo(id){
+  var round = STATE.bracket.filter(function(r){ return r.id===id; })[0];
+  if (!round) return;
+  var torneo = valOf("round-torneo-"+id);
+  if (!torneo){ alert("Escribe un nombre de torneo."); return; }
+  round.torneo = torneo;
   saveStateDoc("bracket", { rounds: STATE.bracket });
 }
 function bracketSideLabel(roundId, side){
@@ -2748,6 +2818,7 @@ document.addEventListener("click", function(e){
     case "relock": relock(); break;
     case "set-tab": setTab(el.getAttribute("data-tab")); break;
     case "set-solicitudes-subtab": setSolicitudesSubtab(el.getAttribute("data-subtab")); break;
+    case "set-cuadros-torneo": ui.cuadrosTorneo = el.getAttribute("data-torneo"); mount(); break;
     case "ask-clear-history": askClearHistory(); break;
     case "confirm-clear-history": clearHistory(); break;
     case "cancel-clear-history": cancelClearHistory(); break;
@@ -2782,6 +2853,7 @@ document.addEventListener("click", function(e){
     case "add-camiseta": addCamiseta(); break;
     case "delete-camiseta": deleteCamiseta(id); break;
     case "delete-round": deleteRound(id); break;
+    case "change-round-torneo": changeRoundTorneo(id); break;
     case "add-bracket-match": addBracketMatch(id); break;
     case "delete-bracket-match": deleteBracketMatch(el.getAttribute("data-round"), id); break;
     case "save-bracket-match": saveBracketMatch(el.getAttribute("data-round"), id); break;
