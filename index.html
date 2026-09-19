@@ -98,12 +98,6 @@ const EMAILJS_NOTIFY_TEMPLATE_ID = "template_paqvq2l";
 
 const ADMIN_EMAIL = "alexruicha@gmail.com";
 const CONTACT_EMAIL = "eightclub.padel@gmail.com";
-const CONTACT_WHATSAPP = "673939455";
-const CONTACT_WHATSAPP_LINK = "https://wa.me/34" + CONTACT_WHATSAPP;
-const CONTACT_WHATSAPP_LABEL = "673 93 94 55";
-const VENUE_ADDRESS = "Av. Neptuno 15, Pol. Ind. Llano del Espartal, 03007 Alicante";
-const VENUE_MAPS_EMBED = "https://www.google.com/maps?q=" + encodeURIComponent("Padel Club Alicante Indoor, " + VENUE_ADDRESS) + "&output=embed";
-const VENUE_MAPS_LINK = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent("Padel Club Alicante Indoor, " + VENUE_ADDRESS);
 const DEFAULT_FAQS = [
   { id:"f1", q:"¿Cómo me apunto?", a:"Rellena el formulario de la sección Inscripción con los datos de la pareja. El organizador revisa la solicitud y os confirma la plaza." },
   { id:"f2", q:"¿Cómo funciona el pago de la inscripción?", a:"El precio y la forma de pago se confirman junto con la plaza; en cuanto estén cerrados los verás también en la sección Inscripción." },
@@ -128,7 +122,10 @@ if (window.emailjs && EMAILJS_PUBLIC_KEY){ try { emailjs.init(EMAILJS_PUBLIC_KEY
 
 const STATE = {
   loaded: { info:false, pairs:false, matches:false, bracket:false, faqs:false, revisiones:false, camisetas:false, camisetaVotos:false },
-  info: { categoria:"Quinta Masculina", sede:"Padel Club Alicante Indoor", fechas:"", precio:"", plazo:"", contacto: CONTACT_EMAIL },
+  info: { categoria:"Quinta Masculina", sede:"Padel Club Alicante Indoor",
+    direccion:"Av. Neptuno 15, Pol. Ind. Llano del Espartal, 03007 Alicante",
+    whatsapp:"673939455", fechas:"", precio:"", plazo:"", contacto: CONTACT_EMAIL,
+    proximaEdicion:"", inscripcionesAbiertas:true, camisetasVotacionAbierta:true },
   pairs: [],
   matches: [],
   bracket: [],
@@ -136,7 +133,8 @@ const STATE = {
   inscripciones: [],
   revisiones: [],
   camisetas: [],
-  camisetaVotos: []
+  camisetaVotos: [],
+  emailUsage: { count:0, monthKey:"" }
 };
 var RATE_LIMIT_SECONDS = 20;
 
@@ -311,6 +309,24 @@ function computeStandings(){
   });
   return rows;
 }
+
+/* ---------- venue/WhatsApp helpers ----------
+   These used to be fixed constants; now they read from the admin-editable STATE.info so
+   changing the club's venue or phone number is an Info-tab edit instead of a code change
+   and a redeploy. Recomputed on every call rather than cached, since STATE.info can change
+   at any point via its own onSnapshot listener. */
+function whatsappDigits(){ return String(STATE.info.whatsapp || "").replace(/\D/g, ""); }
+function whatsappLink(){ var d = whatsappDigits(); return d ? "https://wa.me/34" + d : ""; }
+/* Spanish mobile numbers print as three-two-two-two ("673 93 94 55"); anything else (a
+   landline, a number with a country code already typed in) just shows as-is rather than
+   forcing a shape that would mangle it. */
+function whatsappLabel(){
+  var d = whatsappDigits();
+  return d.length === 9 ? d.slice(0,3)+" "+d.slice(3,5)+" "+d.slice(5,7)+" "+d.slice(7,9) : d;
+}
+function venueFullAddress(){ return (STATE.info.sede||"") + (STATE.info.direccion ? ", " + STATE.info.direccion : ""); }
+function venueMapsEmbed(){ return "https://www.google.com/maps?q=" + encodeURIComponent(venueFullAddress()) + "&output=embed"; }
+function venueMapsLink(){ return "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(venueFullAddress()); }
 
 /* ---------- EIGHT Ranking (individual, derived from liga results) ----------
    Players aren't stored as their own entities — only as j1/j2 strings on a pair (liga) or
@@ -510,6 +526,7 @@ function renderHeader(){
     + '</header>';
 }
 function renderHero(){
+  var i = STATE.info;
   var animCls = heroAnimatedOnce ? "" : " hero-animate";
   heroAnimatedOnce = true;
   var court = '<svg class="hero-court" viewBox="0 0 800 500" aria-hidden="true" focusable="false">'
@@ -522,13 +539,13 @@ function renderHero(){
   return '<section class="hero'+animCls+'" id="inicio"><canvas class="hero-dots-canvas" aria-hidden="true"></canvas><span class="hero-num" aria-hidden="true">8</span>'
     + court
     + '<div class="hero-inner">'
-    + '<p class="hero-eyebrow">Equipo 8 · Padel Club Alicante Indoor</p>'
+    + '<p class="hero-eyebrow">Equipo 8 · '+escHtml(i.sede)+'</p>'
     + '<h1 class="hero-title">EIGHT<span class="dot">.</span></h1>'
     + '<p class="hero-brand-sub">Club</p>'
-    + '<p class="hero-subtitle">Quinta Masculina</p>'
-    + '<p class="hero-text">El circuito de pádel nacido del Equipo 8 en Padel Club Alicante Indoor. Fase de liga todos contra todos y después cuadros eliminatorios: sigue cada resultado en directo, en esta misma página.</p>'
+    + '<p class="hero-subtitle">'+escHtml(i.categoria)+'</p>'
+    + '<p class="hero-text">El circuito de pádel nacido del Equipo 8 en '+escHtml(i.sede)+'. Fase de liga todos contra todos y después cuadros eliminatorios: sigue cada resultado en directo, en esta misma página.</p>'
     + '<div class="hero-actions"><a href="#inscripcion" class="btn btn-primary">Apúntate</a><a href="#liga" class="btn btn-ghost">Ver liga y cuadros</a><span class="bounce-dot" aria-hidden="true"></span></div>'
-    + '<p class="hero-next">Próxima edición: <strong>EIGHT. / Winter Series</strong> — Próximamente.</p>'
+    + (i.proximaEdicion ? '<p class="hero-next">'+escHtml(i.proximaEdicion)+'</p>' : "")
     + '</div></section>';
 }
 function renderStats(){
@@ -616,22 +633,26 @@ function renderInscripcion(){
       + '<div class="insc-success"><div class="big">¡Solicitud enviada! <span class="dot-accent">·</span></div><p>La hemos registrado. Os confirmaremos la plaza por email o teléfono en cuanto la revisemos.</p></div>'
       + '</div></section>';
   }
+  var whatsappHint = whatsappLabel() ? ' o por WhatsApp al <strong>'+escHtml(whatsappLabel())+'</strong>' : "";
+  var body = i.inscripcionesAbiertas === false
+    ? '<div class="insc-success"><div class="big">Inscripciones cerradas por ahora</div><p>No estamos aceptando solicitudes nuevas en este momento. Escríbenos a <strong>'+escHtml(i.contacto||CONTACT_EMAIL)+'</strong>'+whatsappHint+' si tienes dudas.</p></div>'
+    : '<div class="card" style="margin-top:1.8rem;max-width:520px;">'
+      + '<form id="inscripcion-form" novalidate><div class="form-grid">'
+      +   labeledInput("insc-j1","Jugador 1","Nombre y apellido")
+      +   labeledInput("insc-j2","Jugador 2","Nombre y apellido")
+      +   labeledInput("insc-contacto","Email de contacto","Para confirmaros la plaza y enviaros el PIN de acceso","","email")
+      +   '<button type="submit" class="btn btn-primary" id="insc-submit-btn">Enviar solicitud de inscripción</button>'
+      +   '<div id="insc-error" class="status-banner err" style="display:none;"></div>'
+      + '</div></form>'
+      + '<p class="form-hint">También puedes escribirnos directamente a <strong>'+escHtml(i.contacto||CONTACT_EMAIL)+'</strong>'+whatsappHint+'.</p>'
+      + '</div>';
   return '<section id="inscripcion" class="section section--alt">'
     + '<img class="insc-player-illustration" src="img/padel-player-2.svg" alt="" aria-hidden="true">'
     + '<div class="section-inner">'
     + '<span class="section-mark" aria-hidden="true">02</span>'
     + '<p class="eyebrow">Inscripción</p><h2 class="section-title">Apúntate con tu pareja</h2>'
     + '<p class="section-lead">Precio: <strong>'+escHtml(i.precio||"Próximamente")+'</strong> · Plazo: <strong>'+escHtml(i.plazo||"Próximamente")+'</strong>. Rellena los datos y os avisamos en cuanto confirmemos la plaza.</p>'
-    + '<div class="card" style="margin-top:1.8rem;max-width:520px;">'
-    + '<form id="inscripcion-form" novalidate><div class="form-grid">'
-    +   labeledInput("insc-j1","Jugador 1","Nombre y apellido")
-    +   labeledInput("insc-j2","Jugador 2","Nombre y apellido")
-    +   labeledInput("insc-contacto","Email de contacto","Para confirmaros la plaza y enviaros el PIN de acceso","","email")
-    +   '<button type="submit" class="btn btn-primary" id="insc-submit-btn">Enviar solicitud de inscripción</button>'
-    +   '<div id="insc-error" class="status-banner err" style="display:none;"></div>'
-    + '</div></form>'
-    + '<p class="form-hint">También puedes escribirnos directamente a <strong>'+CONTACT_EMAIL+'</strong> o por WhatsApp al <strong>'+CONTACT_WHATSAPP_LABEL+'</strong>.</p>'
-    + '</div></div></section>';
+    + body + '</div></section>';
 }
 
 function renderLiga(){
@@ -914,25 +935,28 @@ function renderCuadros(){
     + torneoTabs + body + '</div></div></section>';
 }
 function renderContacto(){
+  var i = STATE.info;
+  var wa = whatsappLink();
   return '<section id="contacto" class="section"><div class="section-inner">'
     + '<span class="section-mark" aria-hidden="true">07</span>'
     + '<p class="eyebrow">Contacto</p><h2 class="section-title">¿Dudas sobre EIGHT.?</h2>'
     + '<p class="section-lead">Escríbenos y te respondemos en menos de 24 horas.</p>'
     + '<div class="contact-actions">'
-    +   '<a class="btn btn-outline" href="mailto:'+CONTACT_EMAIL+'">Email: '+CONTACT_EMAIL+'</a>'
-    +   '<a class="btn btn-outline" href="'+CONTACT_WHATSAPP_LINK+'" target="_blank" rel="noopener">WhatsApp: '+CONTACT_WHATSAPP_LABEL+'</a>'
+    +   '<a class="btn btn-outline" href="mailto:'+escHtml(i.contacto||CONTACT_EMAIL)+'">Email: '+escHtml(i.contacto||CONTACT_EMAIL)+'</a>'
+    +   (wa ? '<a class="btn btn-outline" href="'+wa+'" target="_blank" rel="noopener">WhatsApp: '+escHtml(whatsappLabel())+'</a>' : "")
     + '</div>'
     + '<div class="venue-block">'
-    +   '<div class="venue-info fx-parallax" data-speed="-16"><h3>Cómo llegar</h3><p>'+escHtml(STATE.info.sede)+'<br>'+escHtml(VENUE_ADDRESS)+'</p><a class="btn btn-outline btn-sm" href="'+VENUE_MAPS_LINK+'" target="_blank" rel="noopener">Indicaciones</a></div>'
-    +   '<div class="venue-map fx-parallax" data-speed="16"><iframe src="'+VENUE_MAPS_EMBED+'" loading="lazy" referrerpolicy="no-referrer-when-downgrade" title="Mapa de Padel Club Alicante Indoor"></iframe></div>'
+    +   '<div class="venue-info fx-parallax" data-speed="-16"><h3>Cómo llegar</h3><p>'+escHtml(i.sede)+'<br>'+escHtml(i.direccion)+'</p><a class="btn btn-outline btn-sm" href="'+venueMapsLink()+'" target="_blank" rel="noopener">Indicaciones</a></div>'
+    +   '<div class="venue-map fx-parallax" data-speed="16"><iframe src="'+venueMapsEmbed()+'" loading="lazy" referrerpolicy="no-referrer-when-downgrade" title="Mapa de '+escHtml(i.sede)+'"></iframe></div>'
     + '</div>'
     + '</div></section>';
 }
 function renderFooter(){
+  var i = STATE.info;
   return '<footer class="site-footer"><div class="footer-inner">'
     + '<span class="brand-mark">EIGHT<span class="dot">.</span></span>'
-    + '<p class="footer-note"><strong>EIGHT.</strong> es el circuito de pádel nacido del Equipo 8 en Padel Club Alicante Indoor. Próxima edición: Winter Series — Próximamente.</p>'
-    + '</div><p class="footer-copy">EIGHT. Club · Equipo 8 · Padel Club Alicante Indoor</p>'
+    + '<p class="footer-note"><strong>EIGHT.</strong> es el circuito de pádel nacido del Equipo 8 en '+escHtml(i.sede)+'.'+(i.proximaEdicion?' '+escHtml(i.proximaEdicion):'')+'</p>'
+    + '</div><p class="footer-copy">EIGHT. Club · Equipo 8 · '+escHtml(i.sede)+'</p>'
     + '<p class="footer-legal"><a href="privacidad.html">Política de privacidad</a></p></footer>';
 }
 
@@ -972,7 +996,7 @@ function renderCamisetaSlide(){
     + '</div>'
     + (multi ? '<div class="camiseta-dots">' + STATE.camisetas.map(function(c, i){ return '<span class="camiseta-dot'+(i===idx?" active":"")+'"></span>'; }).join("") + '</div>' : "")
     + (d.nombre ? '<p class="camiseta-slide-name">'+escHtml(d.nombre)+'</p>' : "")
-    + (!ui.camisetaVoted
+    + (!ui.camisetaVoted && STATE.info.camisetasVotacionAbierta !== false
         ? '<div class="camiseta-vote-form">'
           + '<input id="camiseta-voter-name" class="camiseta-voter-name" type="text" placeholder="Tu nombre" maxlength="60" autocomplete="name" value="'+escHtml(ui.camisetaNombreDraft)+'">'
           + (ui.camisetaVoteError ? '<p class="camiseta-vote-error">'+escHtml(ui.camisetaVoteError)+'</p>' : "")
@@ -994,17 +1018,20 @@ function renderCamisetaGrid(){
 function renderCamisetaModal(){
   if (!ui.camisetaModalOpen || !STATE.camisetas.length) return "";
   var already = !!ui.camisetaVoted;
+  var votingOpen = STATE.info.camisetasVotacionAbierta !== false;
   var multi = STATE.camisetas.length > 1;
   var isGrid = multi && ui.camisetaView === "grid";
-  var banner = ui.camisetaVoteEstado === "aprobada"
-    ? '<div class="status-banner">¡Tu voto ha sido validado! Gracias por participar.</div>'
-    : ui.camisetaVoteEstado === "rechazada"
-    ? '<div class="status-banner err">Tu voto no se pudo validar. Si crees que es un error, escríbenos.</div>'
-    : '<div class="status-banner">¡Gracias por votar! Tu voto queda pendiente de validación por el organizador.</div>';
+  var banner = already
+    ? (ui.camisetaVoteEstado === "aprobada"
+        ? '<div class="status-banner">¡Tu voto ha sido validado! Gracias por participar.</div>'
+        : ui.camisetaVoteEstado === "rechazada"
+        ? '<div class="status-banner err">Tu voto no se pudo validar. Si crees que es un error, escríbenos.</div>'
+        : '<div class="status-banner">¡Gracias por votar! Tu voto queda pendiente de validación por el organizador.</div>')
+    : '<div class="status-banner err">La votación está cerrada. Gracias por vuestro interés.</div>';
   return '<div class="modal-overlay" data-modal="camisetas"><div class="modal-panel modal-panel--camiseta'+(isGrid?" modal-panel--camiseta-grid":"")+'">'
     + '<div class="modal-header"><h2>Vota la camiseta</h2><button class="modal-close" data-action="close-camisetas" type="button">✕</button></div>'
     + '<div class="modal-body">'
-    + (already
+    + (already || !votingOpen
         ? banner
         : '<p style="color:var(--ink-soft);font-size:.9rem;margin-bottom:1rem;">Vamos a imprimir camisetas para repartir en los torneos — elige tu diseño favorito y escribe tu nombre para votar. Un voto por persona.</p>')
     + (multi
@@ -1017,9 +1044,10 @@ function renderCamisetaModal(){
 }
 function renderCamisetaFab(){
   if (!STATE.loaded.camisetas || !STATE.camisetas.length || ui.camisetaModalOpen) return "";
+  var label = ui.camisetaVoted || STATE.info.camisetasVotacionAbierta === false ? "Ver camisetas" : "Vota la camiseta";
   return '<button class="camiseta-fab" data-action="open-camisetas" type="button">'
     + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4 4 8l3 3 1-1v9h8v-9l1 1 3-3-4-4-3 2h-2Z"/></svg>'
-    + '<span>'+(ui.camisetaVoted ? "Ver camisetas" : "Vota la camiseta")+'</span>'
+    + '<span>'+label+'</span>'
     + '</button>';
 }
 function renderPlayerModal(rankingRows){
@@ -1173,14 +1201,35 @@ function renderOrganizer(){
 }
 function renderOrgInfoTab(){
   var i = STATE.info;
+  var torneos = distinctTorneos();
+  var kioskLinks = torneos.length
+    ? torneos.map(function(t){ return '<a class="btn btn-outline btn-sm" href="#pantalla/'+encodeURIComponent(t)+'" target="_blank" rel="noopener" style="margin-right:.5rem;margin-bottom:.5rem;">Pantalla · '+escHtml(t)+'</a>'; }).join("")
+    : '<a class="btn btn-outline btn-sm" href="#pantalla" target="_blank" rel="noopener">Abrir pantalla del club</a>';
   return '<div><div class="form-grid" style="max-width:none;">'
+    + labeledInput("info-categoria","Categoría",null,i.categoria) + labeledInput("info-sede","Sede (nombre del club)",null,i.sede)
+    + labeledInput("info-direccion","Dirección",null,i.direccion) + labeledInput("info-whatsapp","WhatsApp (solo dígitos)","Ej. 673939455",i.whatsapp)
     + labeledInput("info-fechas","Fechas",null,i.fechas) + labeledInput("info-precio","Precio de inscripción",null,i.precio)
     + labeledInput("info-plazo","Plazo de inscripción",null,i.plazo) + labeledInput("info-contacto","Email de contacto",null,i.contacto)
-    + '</div><button class="btn btn-primary btn-sm" style="margin-top:1.2rem;" data-action="save-info" type="button">Guardar información</button>'
+    + labeledInput("info-proxima-edicion","Próxima edición (frase libre, vacío = ocultar)","Ej. Winter Series ya en marcha",i.proximaEdicion)
+    + '</div>'
+    + '<label class="bm-tbd-check" style="margin-top:1rem;"><input type="checkbox" id="info-inscripciones-abiertas"'+(i.inscripcionesAbiertas!==false?" checked":"")+'>Inscripciones abiertas</label>'
+    + '<button class="btn btn-primary btn-sm" style="margin-top:1.2rem;display:block;" data-action="save-info" type="button">Guardar información</button>'
     + '<div style="margin-top:1.6rem;padding-top:1.2rem;border-top:1px dashed var(--border);">'
     +   '<p style="color:var(--ink-soft);font-size:.85rem;margin-bottom:.6rem;">Vista para una tele o tablet en el propio club el día de torneo: cuadros y ranking en directo, sin cabecera ni botones.</p>'
-    +   '<a class="btn btn-outline btn-sm" href="#pantalla" target="_blank" rel="noopener">Abrir pantalla del club</a>'
-    + '</div></div>';
+    +   kioskLinks
+    + '</div>'
+    + emailUsageNote()
+    + '</div>';
+}
+/* rough usage nudge for EmailJS's free-tier 200/month cap — see trackEmailSend for why
+   the count itself is admin-sends-only and therefore a floor, not an exact total. */
+function emailUsageNote(){
+  var u = STATE.emailUsage;
+  if (!u.monthKey) return "";
+  var near = u.count >= 180;
+  return '<div style="margin-top:1.4rem;padding-top:1.2rem;border-top:1px dashed var(--border);">'
+    + '<p style="color:'+(near?"var(--danger)":"var(--ink-soft)")+';font-size:.85rem;">Emails de PIN enviados este mes: <strong>'+u.count+'</strong> de 200 (plan gratuito de EmailJS)'+(near?' — os estáis acercando al límite.':'.')+'</p>'
+    + '</div>';
 }
 function renderRequestRows(list, withActions){
   return '<div>' + list.map(function(r){
@@ -1387,6 +1436,11 @@ function renderOrgFaqTab(){
 }
 function renderOrgCamisetasTab(){
   if (!STATE.loaded.camisetas || !STATE.loaded.camisetaVotos) return '<p class="loading-note">Cargando…</p>';
+  var votingOpen = STATE.info.camisetasVotacionAbierta !== false;
+  var votacionToggle = '<div class="round-torneo-row" style="margin-bottom:1.2rem;">'
+    + '<span class="status-pill '+(votingOpen?"accepted":"rejected")+'">'+(votingOpen?"Votación abierta":"Votación cerrada")+'</span>'
+    + '<button class="btn btn-outline btn-sm" data-action="toggle-camiseta-votacion" type="button">'+(votingOpen?"Cerrar votación":"Reabrir votación")+'</button>'
+    + '</div>';
   var pending = STATE.camisetaVotos.filter(function(v){ return v.estado === "pendiente"; })
     .sort(function(a, b){
       var ta = a.creadoEn && a.creadoEn.toMillis ? a.creadoEn.toMillis() : 0;
@@ -1404,6 +1458,27 @@ function renderOrgCamisetasTab(){
       + '<span class="camiseta-pending-actions">'
       +   '<button class="btn btn-primary btn-sm" data-action="approve-camiseta-vote" data-id="'+v.id+'" type="button">Validar</button>'
       +   '<button class="btn btn-danger btn-sm" data-action="reject-camiseta-vote" data-id="'+v.id+'" type="button">Rechazar</button>'
+      + '</span>'
+      + '</div>';
+  }).join("");
+  var decided = STATE.camisetaVotos.filter(function(v){ return v.estado === "aprobada" || v.estado === "rechazada"; })
+    .sort(function(a, b){
+      var ta = a.creadoEn && a.creadoEn.toMillis ? a.creadoEn.toMillis() : 0;
+      var tb = b.creadoEn && b.creadoEn.toMillis ? b.creadoEn.toMillis() : 0;
+      return tb - ta;
+    });
+  var decidedRows = decided.map(function(v){
+    var d = STATE.camisetas.filter(function(x){ return x.id === v.disenoId; })[0];
+    var isOk = v.estado === "aprobada";
+    return '<div class="camiseta-admin-row">'
+      + '<img class="camiseta-admin-thumb" src="'+(d ? (d.imagenThumb||d.imagenData) : "")+'" alt="">'
+      + '<div class="camiseta-admin-info">'
+      +   '<strong>'+escHtml(v.nombre || "Sin nombre")+'</strong>'
+      +   '<small>Vota por: '+escHtml(d ? d.nombre : "diseño eliminado")+' · <span class="status-pill '+(isOk?"accepted":"rejected")+'">'+(isOk?"Validado":"Rechazado")+'</span></small>'
+      + '</div>'
+      + '<span class="camiseta-pending-actions">'
+      +   '<button class="btn btn-outline btn-sm" data-action="set-camiseta-vote-estado" data-id="'+v.id+'" data-estado="'+(isOk?"rechazada":"aprobada")+'" type="button">'+(isOk?"Rechazar":"Validar")+'</button>'
+      +   '<button class="btn btn-ghost btn-sm" data-action="set-camiseta-vote-estado" data-id="'+v.id+'" data-estado="pendiente" type="button">Volver a pendiente</button>'
       + '</span>'
       + '</div>';
   }).join("");
@@ -1426,6 +1501,7 @@ function renderOrgCamisetasTab(){
       + '</div>';
   }).join("");
   return '<div>'
+    + votacionToggle
     + (pending.length
         ? '<h3 style="font-size:1rem;margin-bottom:.7rem;">Votos pendientes de validar ('+pending.length+')</h3>' + pendingRows + '<hr style="border:none;border-top:1px solid var(--border);margin:1.4rem 0;">'
         : "")
@@ -1435,7 +1511,11 @@ function renderOrgCamisetasTab(){
     +   '<div class="field"><span>Nombre del diseño</span><input id="new-camiseta-nombre" type="text" placeholder="Ej. Terracota"></div>'
     +   '<div class="field"><span>Imagen</span><input id="new-camiseta-file" type="file" accept="image/*"></div>'
     +   '<button class="btn btn-primary btn-sm" data-action="add-camiseta" type="button"'+(ui.camisetaUploadBusy?" disabled":"")+'>'+(ui.camisetaUploadBusy?"Subiendo…":"Añadir diseño")+'</button>'
-    + '</div></div>';
+    + '</div>'
+    + (decided.length
+        ? '<div style="margin-top:1.8rem;padding-top:1.2rem;border-top:1px dashed var(--border);"><h3 style="font-size:1rem;margin-bottom:.7rem;">Historial de votos decididos ('+decided.length+')</h3>' + decidedRows + '</div>'
+        : "")
+    + '</div>';
 }
 
 /* ---------- app root ---------- */
@@ -1454,10 +1534,13 @@ function renderApp(){
    markup and CSS as the normal page so a result posted mid-match shows up here the
    instant onSnapshot re-mounts it, same as everywhere else on the site. */
 function renderKioskView(){
-  /* always shows whichever torneo is currently most active (see distinctTorneos) rather
-     than a selector — this view is a passive screen propped up at the venue, nobody's
-     there to click a tab on it. */
-  var kioskTorneo = distinctTorneos()[0];
+  /* #pantalla/<torneo> (see the per-torneo links in the organizer's Info tab) pins the
+     screen to a specific tournament; plain #pantalla falls back to whichever one is
+     currently most active (see distinctTorneos) — either way there's no selector to
+     click, this is a passive screen propped up at the venue. */
+  var hashTorneo = decodeURIComponent(location.hash.replace(/^#pantalla\/?/, ""));
+  var torneos = distinctTorneos();
+  var kioskTorneo = (hashTorneo && torneos.indexOf(hashTorneo) !== -1) ? hashTorneo : torneos[0];
   var visibleRounds = sortedRounds().filter(function(r){ return r.matches && r.matches.length && roundTorneo(r) === kioskTorneo; });
   var bracketBody = visibleRounds.length
     ? '<div class="bracket'+(visibleRounds.length>1?" bracket--tree":"")+'">' + visibleRounds.map(function(r){
@@ -1874,7 +1957,7 @@ function mount(){
     selStart = document.activeElement.selectionStart;
     selEnd = document.activeElement.selectionEnd;
   }
-  var isKiosk = location.hash === "#pantalla";
+  var isKiosk = location.hash.indexOf("#pantalla") === 0;
   document.documentElement.classList.toggle("kiosk-mode", isKiosk);
   document.getElementById("app").innerHTML = isKiosk ? renderKioskView() : renderApp();
   wireInscripcionForm();
@@ -1910,7 +1993,17 @@ function sendPinEmail(pair){
     to_email: pair.contacto.trim(),
     pair_name: pair.j1 + " / " + pair.j2,
     pin: pair.pin
-  }).then(function(){ return true; }).catch(function(){ return false; });
+  }).then(function(){ trackEmailSend(); return true; }).catch(function(){ return false; });
+}
+/* see the state/emailUsage onSnapshot listener for why this only ever sees admin-
+   triggered sends. Not transactional — two admin tabs sending at the exact same moment
+   could under-count by one — which is fine for a rough "you're getting close" nudge. */
+function trackEmailSend(){
+  var now = new Date();
+  var monthKey = now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2,"0");
+  var count = (STATE.emailUsage.monthKey === monthKey ? STATE.emailUsage.count : 0) + 1;
+  STATE.emailUsage = { count: count, monthKey: monthKey };
+  setDoc(doc(db, "state", "emailUsage"), STATE.emailUsage).catch(function(){});
 }
 /* best-effort "someone just registered" heads-up to the organizer's own inbox — never
    blocks or fails the actual inscripción, which is why nothing here awaits it or
@@ -1955,7 +2048,7 @@ function wireInscripcionForm(){
     }).catch(function(err){
       btn.disabled = false; btn.textContent = "Enviar solicitud de inscripción";
       errEl.style.display = "block";
-      errEl.textContent = "No se pudo enviar. Comprueba tu conexión e inténtalo de nuevo, o escríbenos a " + CONTACT_EMAIL + ".";
+      errEl.textContent = "No se pudo enviar. Comprueba tu conexión e inténtalo de nuevo, o escríbenos a " + (STATE.info.contacto || CONTACT_EMAIL) + ".";
     });
   });
 }
@@ -2020,7 +2113,7 @@ function openCamisetaDetail(indexStr){
    second vote from this same browser/account — see the block comment above
    camisetaVoteCounts for what actually closes the cross-browser gap. */
 function voteCamiseta(disenoId){
-  if (ui.camisetaVoted || ui.camisetaVoteBusy || !disenoId) return;
+  if (ui.camisetaVoted || ui.camisetaVoteBusy || !disenoId || STATE.info.camisetasVotacionAbierta === false) return;
   var nombre = valOf("camiseta-voter-name");
   ui.camisetaNombreDraft = nombre;
   if (!nombre || !isValidPersonName(nombre)){
@@ -2588,8 +2681,15 @@ function saveMatch(id){
   saveStateDoc("matches", { list: STATE.matches });
 }
 function saveInfo(){
+  STATE.info.categoria = valOf("info-categoria") || STATE.info.categoria;
+  STATE.info.sede = valOf("info-sede") || STATE.info.sede;
+  STATE.info.direccion = valOf("info-direccion");
+  STATE.info.whatsapp = valOf("info-whatsapp");
   STATE.info.fechas = valOf("info-fechas"); STATE.info.precio = valOf("info-precio");
   STATE.info.plazo = valOf("info-plazo"); STATE.info.contacto = valOf("info-contacto") || CONTACT_EMAIL;
+  STATE.info.proximaEdicion = valOf("info-proxima-edicion");
+  var abiertasEl = document.getElementById("info-inscripciones-abiertas");
+  STATE.info.inscripcionesAbiertas = abiertasEl ? abiertasEl.checked : true;
   saveStateDoc("info", STATE.info);
 }
 function addRound(){
@@ -2785,16 +2885,23 @@ function rejectRequest(id){
     setSaveResult(false, "No se pudo actualizar. Inténtalo de nuevo.");
   });
 }
-function approveCamisetaVote(uid){
-  updateDoc(doc(db, "camisetaVotos", uid), { estado: "aprobada" }).catch(function(){
-    alert("No se pudo validar el voto. Inténtalo de nuevo.");
-  });
-}
-function rejectCamisetaVote(uid){
-  if (!confirm("¿Rechazar este voto?")) return;
-  updateDoc(doc(db, "camisetaVotos", uid), { estado: "rechazada" }).catch(function(){
+/* single place that actually flips a vote's estado — approve/reject/revert-to-pending
+   are all just this with a different target value, which is what lets the "historial"
+   list undo a decision (e.g. approved by mistake) instead of it being permanent the
+   moment it's made. */
+function setCamisetaVoteEstado(uid, estado){
+  updateDoc(doc(db, "camisetaVotos", uid), { estado: estado }).catch(function(){
     alert("No se pudo actualizar el voto. Inténtalo de nuevo.");
   });
+}
+function approveCamisetaVote(uid){ setCamisetaVoteEstado(uid, "aprobada"); }
+function rejectCamisetaVote(uid){
+  if (!confirm("¿Rechazar este voto?")) return;
+  setCamisetaVoteEstado(uid, "rechazada");
+}
+function toggleCamisetaVotacion(){
+  STATE.info.camisetasVotacionAbierta = STATE.info.camisetasVotacionAbierta === false;
+  saveStateDoc("info", STATE.info);
 }
 
 /* ---------- events ---------- */
@@ -2850,6 +2957,8 @@ document.addEventListener("click", function(e){
     case "vote-camiseta": voteCamiseta(el.getAttribute("data-id")); break;
     case "approve-camiseta-vote": approveCamisetaVote(id); break;
     case "reject-camiseta-vote": rejectCamisetaVote(id); break;
+    case "set-camiseta-vote-estado": setCamisetaVoteEstado(id, el.getAttribute("data-estado")); break;
+    case "toggle-camiseta-votacion": toggleCamisetaVotacion(); break;
     case "add-camiseta": addCamiseta(); break;
     case "delete-camiseta": deleteCamiseta(id); break;
     case "delete-round": deleteRound(id); break;
@@ -2908,6 +3017,16 @@ onSnapshot(doc(db,"state","info"), function(snap){
   if (snap.exists()) STATE.info = Object.assign({}, STATE.info, snap.data());
   STATE.loaded.info = true; mount();
 }, function(){ STATE.loaded.info = true; mount(); });
+
+/* rough, best-effort counter of PIN emails sent this month (see trackEmailSend) so the
+   organizer gets a heads-up before quietly hitting EmailJS's free-tier cap — it only
+   counts sends made from an admin-authenticated action (regeneratePin/addPair/
+   acceptRequest/resendPinEmail), since state/* is admin-write-only; the "nueva
+   solicitud" notification fires from the public, unauthenticated inscripción form and
+   can't write here, so real usage runs a bit higher than this shows. */
+onSnapshot(doc(db,"state","emailUsage"), function(snap){
+  if (snap.exists()) STATE.emailUsage = snap.data();
+}, function(){});
 
 onSnapshot(doc(db,"state","pairs"), function(snap){
   STATE.pairs = (snap.exists() && snap.data().list) || [];
