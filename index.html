@@ -1524,7 +1524,19 @@ function renderApp(){
   return renderHeader()
     + '<main>' + renderHero() + renderStats() + renderFormato() + renderInscripcion()
     + renderLiga() + renderRanking(rankingRows) + renderCuadros() + renderFAQ() + renderContacto() + '</main>'
-    + renderFooter() + renderRankingUpdateToast() + renderCamisetaFab() + renderOrganizer() + renderPlayerModal(rankingRows) + renderPlayerProfileModal(rankingRows) + renderCamisetaModal();
+    + renderFooter() + renderRankingUpdateToast() + renderCamisetaFab() + renderOrganizer() + renderPlayerModal(rankingRows) + renderPlayerProfileModal(rankingRows)
+    + '<div id="camiseta-modal-root">' + renderCamisetaModal() + '</div>';
+}
+/* browsing between designs (prev/next, grid<->single) used to go through the global
+   mount(), which rebuilds the ENTIRE page — header, liga tables, the embedded Google
+   Maps iframe, everything — just to swap which shirt image is showing. That full
+   teardown/rebuild is exactly what read as "the page reloads" every time you flipped to
+   the next design. None of camisetaPrev/camisetaNext/toggleCamisetaView/
+   openCamisetaDetail touch anything outside the modal (see camiseta-modal-root above),
+   so they re-render only that container instead. */
+function mountCamisetaModal(){
+  var root = document.getElementById("camiseta-modal-root");
+  if (root) root.innerHTML = renderCamisetaModal();
 }
 /* the venue-screen view (see the "Abrir pantalla del club" link in the organizer's Info
    tab) — a TV or tablet propped up at Padel Club Alicante Indoor on torneo day, showing
@@ -2098,16 +2110,16 @@ function captureCamisetaNombreDraft(){
   var el = document.getElementById("camiseta-voter-name");
   if (el) ui.camisetaNombreDraft = el.value;
 }
-function camisetaPrev(){ if (!STATE.camisetas.length) return; captureCamisetaNombreDraft(); ui.camisetaIndex = (ui.camisetaIndex - 1 + STATE.camisetas.length) % STATE.camisetas.length; mount(); }
-function camisetaNext(){ if (!STATE.camisetas.length) return; captureCamisetaNombreDraft(); ui.camisetaIndex = (ui.camisetaIndex + 1) % STATE.camisetas.length; mount(); }
-function toggleCamisetaView(){ captureCamisetaNombreDraft(); ui.camisetaView = (ui.camisetaView === "grid") ? "carousel" : "grid"; mount(); }
+function camisetaPrev(){ if (!STATE.camisetas.length) return; captureCamisetaNombreDraft(); ui.camisetaIndex = (ui.camisetaIndex - 1 + STATE.camisetas.length) % STATE.camisetas.length; mountCamisetaModal(); }
+function camisetaNext(){ if (!STATE.camisetas.length) return; captureCamisetaNombreDraft(); ui.camisetaIndex = (ui.camisetaIndex + 1) % STATE.camisetas.length; mountCamisetaModal(); }
+function toggleCamisetaView(){ captureCamisetaNombreDraft(); ui.camisetaView = (ui.camisetaView === "grid") ? "carousel" : "grid"; mountCamisetaModal(); }
 function openCamisetaDetail(indexStr){
   var idx = parseInt(indexStr, 10);
   if (isNaN(idx) || idx < 0 || idx >= STATE.camisetas.length) return;
   captureCamisetaNombreDraft();
   ui.camisetaIndex = idx;
   ui.camisetaView = "carousel";
-  mount();
+  mountCamisetaModal();
 }
 /* the doc ID being the voter's own auth uid (see ensureCamisetaAuthUid) only stops a
    second vote from this same browser/account — see the block comment above
@@ -2895,8 +2907,11 @@ function setCamisetaVoteEstado(uid, estado){
   });
 }
 function approveCamisetaVote(uid){ setCamisetaVoteEstado(uid, "aprobada"); }
+/* no confirm() dialog here (unlike most other "reject/delete" actions in the admin) —
+   a decision on a camiseta vote is never final any more, see the "Historial de votos
+   decididos" list, which can flip it back at any time. A confirm prompt used to guard
+   here and reportedly ate the click in some browser/embed contexts. */
 function rejectCamisetaVote(uid){
-  if (!confirm("¿Rechazar este voto?")) return;
   setCamisetaVoteEstado(uid, "rechazada");
 }
 function toggleCamisetaVotacion(){
