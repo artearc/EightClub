@@ -888,3 +888,9 @@ html.kiosk-mode{font-size:150%;}
 .unresolved-note summary{cursor:pointer;font-weight:600;color:var(--ink-soft);}
 .unresolved-note ul{margin:.5rem 0 0;padding-left:1.1rem;list-style:disc;}
 .org-row .grow small + small{display:block;}
+
+/* Liga tab: "Jornada N" header with that jornada's own deadline control */
+.jornada-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem .8rem;margin-bottom:.5rem;}
+.jornada-limite{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .5rem;font-size:.8rem;color:var(--ink-soft);}
+.jornada-limite input[type=date]{border:1.5px solid rgba(var(--ink-rgb),.16);border-radius:var(--radius-inputs);padding:.35rem .7rem;background:var(--surface-input);color:var(--ink);font-size:.82rem;}
+.jornada-limite-current strong{color:var(--danger);}

@@ -145,7 +145,7 @@ const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:
   playerModalOpen:false, playerPairId:null, playerSubmitMsg:"",
   playerAuthError:"", playerAuthBusy:false, playerAccessPairDraft:null, lastRevisionSubmitAt:0,
   playerCorrecting:null, playerContactDraft:null, playerName1Draft:null, playerName2Draft:null, playerContactMsg:"", playerContactError:"", playerContactBusy:false,
-  fixtureConfirm:null, recompactConfirm:false, recompactFecha:"", recompactError:"",
+  fixtureConfirm:null, recompactConfirm:false, jornadaLimiteDraft:{},
   profileSlug:null, rankingUpdates:[], rankingSearch:"", cuadrosTorneo:null,
   camisetaModalOpen:false, camisetaIndex:0, camisetaVoted:null, camisetaVoteEstado:null, camisetaVoteError:"", camisetaVoteBusy:false, camisetaUploadBusy:false, camisetaView:"carousel", camisetaNombreDraft:"" };
 try {
@@ -1702,39 +1702,63 @@ function renderOrgParejasTab(){
     +   '<button class="btn btn-primary btn-sm" data-action="add-pair" type="button">Añadir pareja</button>'
     + '</div></div>';
 }
-/* "dar más margen" without re-drawing the round robin: see planRecompact. Two steps —
-   pick a deadline, then an in-page confirmation listing exactly what changes — and
+/* "dar más margen" without re-drawing the round robin: see planRecompact. Only moves
+   unplayed matches between jornadas — deadlines are set separately, one jornada at a time
+   (see renderJornadaLimiteControl). In-page confirmation listing exactly what changes;
    nothing is written until "Sí, recompactar". */
 function renderRecompactCard(){
   var plan = planRecompact();
   var playedCount = STATE.matches.filter(isMatchPlayed).length;
+  var changed = plan.filter(function(p){ return p.to !== p.from; });
   if (!ui.recompactConfirm){
     return '<div class="recompact-card"><h4>Recompactar jornadas pendientes</h4>'
-      + '<p class="pm-note">Pasa cada partido sin jugar a la jornada siguiente a la última que jugó cada pareja (sin cambiar quién juega contra quién) y les pone una fecha límite. Los '+playedCount+' partido'+(playedCount===1?"":"s")+' ya jugado'+(playedCount===1?"":"s")+' no se tocan.</p>'
-      + (plan.length
-          ? '<div class="recompact-controls"><label class="field"><span>Fecha límite</span><input type="date" id="recompact-fecha" value="'+escHtml(ui.recompactFecha || defaultFechaLimite())+'"></label>'
-            + '<button class="btn btn-outline btn-sm" data-action="ask-recompact" type="button">Revisar cambios ('+plan.length+' partido'+(plan.length===1?"":"s")+')</button></div>'
-            + (ui.recompactError ? '<p class="login-error">'+escHtml(ui.recompactError)+'</p>' : "")
-          : '<p class="pm-note">No hay partidos sin jugar.</p>')
+      + '<p class="pm-note">Pasa cada partido sin jugar a la jornada siguiente a la última que jugó cada pareja (sin cambiar quién juega contra quién). Los '+playedCount+' partido'+(playedCount===1?"":"s")+' ya jugado'+(playedCount===1?"":"s")+' no se tocan. La fecha límite se pone aparte, jornada a jornada, junto a cada «Jornada N» de abajo.</p>'
+      + (!plan.length ? '<p class="pm-note">No hay partidos sin jugar.</p>'
+          : !changed.length ? '<p class="pm-note">Todos los partidos sin jugar ya están en su jornada: no hay nada que recompactar.</p>'
+          : '<div class="recompact-controls"><button class="btn btn-outline btn-sm" data-action="ask-recompact" type="button">Revisar cambios ('+changed.length+' partido'+(changed.length===1?"":"s")+' cambia'+(changed.length===1?"":"n")+' de jornada)</button></div>')
       + '</div>';
   }
-  var changed = plan.filter(function(p){ return p.to !== p.from; });
   var rows = plan.map(function(p){
     var m = p.match;
-    var hadSchedule = !!(m.fecha || m.hora || m.pista);
+    var lost = [];
+    if (m.fecha || m.hora || m.pista) lost.push("su cita: " + matchScheduleText(m));
+    if (m.fechaLimite) lost.push("su fecha límite del " + formatFechaLimite(m.fechaLimite));
     return '<li><strong>'+escHtml(pairLabel(m.pairA))+'</strong> vs <strong>'+escHtml(pairLabel(m.pairB))+'</strong>: '
       + (p.to !== p.from
-          ? 'Jornada '+p.from+' → <strong>Jornada '+p.to+'</strong>'+(hadSchedule ? ' <span class="deadline-tag">(se quita su cita: '+escHtml(matchScheduleText(m))+')</span>' : "")
+          ? 'Jornada '+p.from+' → <strong>Jornada '+p.to+'</strong>'+(lost.length ? ' <span class="deadline-tag">(se quita '+escHtml(lost.join(" y "))+')</span>' : "")
           : 'se queda en la Jornada '+p.from)
       + '</li>';
   }).join("");
   return '<div class="recompact-card recompact-card--confirm"><h4>¿Recompactar?</h4>'
-    + '<p class="pm-note">Se van a actualizar <strong>'+plan.length+'</strong> partido'+(plan.length===1?"":"s")+' sin jugar ('+changed.length+' cambia'+(changed.length===1?"":"n")+' de jornada). Fecha límite para todos: <strong>'+escHtml(formatFechaLimite(ui.recompactFecha))+'</strong>. Los '+playedCount+' partido'+(playedCount===1?"":"s")+' ya jugado'+(playedCount===1?"":"s")+' no se tocan.</p>'
+    + '<p class="pm-note"><strong>'+changed.length+'</strong> partido'+(changed.length===1?"":"s")+' sin jugar cambia'+(changed.length===1?"":"n")+' de jornada; los demás se quedan como están. Los '+playedCount+' partido'+(playedCount===1?"":"s")+' ya jugado'+(playedCount===1?"":"s")+' no se tocan.</p>'
     + '<ul class="recompact-list">'+rows+'</ul>'
     + '<div class="inline-confirm" style="margin-top:.8rem;">'
     +   '<button class="btn btn-danger btn-sm" data-action="confirm-recompact" type="button">Sí, recompactar</button>'
     +   '<button class="btn btn-ghost btn-sm" data-action="cancel-recompact" type="button">Cancelar</button>'
     + '</div></div>';
+}
+/* the deadline for ONE jornada: written to every match of that jornada that's still
+   unplayed (played ones are never touched). Shown only while the jornada has something
+   left to play. Prefilled with the jornada's current deadline, else next Sunday + 14. */
+function renderJornadaLimiteControl(j, matches){
+  var pending = matches.filter(function(m){ return !isMatchPlayed(m); });
+  if (!pending.length) return "";
+  var fechas = {};
+  pending.forEach(function(m){ if (m.fechaLimite) fechas[m.fechaLimite] = (fechas[m.fechaLimite] || 0) + 1; });
+  var distintas = Object.keys(fechas).sort();
+  var sinFecha = pending.filter(function(m){ return !m.fechaLimite; }).length;
+  var current;
+  if (!distintas.length) current = "Sin fecha límite";
+  else if (distintas.length === 1 && !sinFecha) current = "Fecha límite: <strong>" + escHtml(formatFechaLimite(distintas[0])) + "</strong>";
+  else current = "Fechas distintas: " + distintas.map(formatFechaLimite).map(escHtml).join(", ") + (sinFecha ? " y " + sinFecha + " sin fecha" : "");
+  var draft = ui.jornadaLimiteDraft[String(j)];
+  var value = draft != null ? draft : (distintas.length === 1 ? distintas[0] : defaultFechaLimite());
+  return '<div class="jornada-limite">'
+    + '<span class="jornada-limite-current">'+current+' <span class="pm-note">('+pending.length+' sin jugar)</span></span>'
+    + '<input type="date" id="jornada-limite-'+j+'" value="'+escHtml(value)+'" aria-label="Fecha límite de la Jornada '+j+'">'
+    + '<button class="btn btn-outline btn-sm" data-action="apply-jornada-limite" data-jornada="'+j+'" type="button">Aplicar a la Jornada '+j+'</button>'
+    + (distintas.length ? '<button class="btn btn-ghost btn-sm" data-action="clear-jornada-limite" data-jornada="'+j+'" type="button">Quitar</button>' : "")
+    + '</div>';
 }
 function renderOrgLigaTab(){
   var confirmedPairs = STATE.pairs.filter(function(p){ return p.confirmed; });
@@ -1766,7 +1790,8 @@ function renderOrgLigaTab(){
   }
   var jornadas = Object.keys(byJ).map(Number).sort(function(a,b){return a-b;});
   var list = jornadas.map(function(j){
-    return '<div style="margin-top:1rem;"><h4 style="font-family:var(--font-mono);font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint);margin-bottom:.5rem;">Jornada '+j+'</h4>'
+    return '<div style="margin-top:1rem;"><div class="jornada-head"><h4 style="font-family:var(--font-mono);font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint);margin:0;">Jornada '+j+'</h4>'
+      + renderJornadaLimiteControl(j, byJ[j]) + '</div>'
       + byJ[j].map(function(m){
           var sets = m.sets || [];
           var setsHtml = renderScoreGrid([
@@ -3174,7 +3199,7 @@ function tryLogin(){
     ui.loginError = true;
   }).finally(function(){ mount(); });
 }
-function setTab(tab){ ui.tab = tab; ui.faqDeleteConfirm = null; ui.fixtureConfirm = null; ui.recompactConfirm = false; ui.recompactError = ""; mount(); }
+function setTab(tab){ ui.tab = tab; ui.faqDeleteConfirm = null; ui.fixtureConfirm = null; ui.recompactConfirm = false; mount(); }
 function setSolicitudesSubtab(tab){ ui.solicitudesSubtab = tab; ui.clearHistoryConfirm = false; mount(); }
 function toggleMobileMenu(){ ui.mobileMenuOpen = !ui.mobileMenuOpen; mount(); }
 function closeMobileMenu(){ ui.mobileMenuOpen = false; mount(); }
@@ -3246,21 +3271,19 @@ function confirmClearFixture(){
   saveStateDoc("matches", { list: STATE.matches });
 }
 function askRecompact(){
-  var fecha = valOf("recompact-fecha");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)){ ui.recompactError = "Elige una fecha límite."; mount(); return; }
-  ui.recompactFecha = fecha; ui.recompactError = ""; ui.recompactConfirm = true; ui.fixtureConfirm = null;
+  ui.recompactConfirm = true; ui.fixtureConfirm = null;
   mount();
 }
 function cancelRecompact(){ ui.recompactConfirm = false; mount(); }
 /* re-plans from the current data at confirm time rather than reusing what was shown,
    in case a result came in between — and only ever touches matches planRecompact
-   returned, which by construction are unplayed. A changed jornada also clears that
-   match's fecha/hora/pista, since that booking was made for the old jornada. */
+   returned that actually change jornada, which by construction are unplayed. Those lose
+   fecha/hora/pista AND fechaLimite, since all of them were set for the old jornada; a
+   match that stays where it is keeps everything. */
 function confirmRecompact(){
-  var fecha = ui.recompactFecha;
   ui.recompactConfirm = false;
-  var plan = planRecompact();
-  if (!fecha || !plan.length){ mount(); return; }
+  var plan = planRecompact().filter(function(p){ return p.to !== p.from; });
+  if (!plan.length){ mount(); return; }
   /* built as a copy (untouched matches — every played one — are the very same objects,
      the planned ones shallow-copied) so a failed write leaves the local view as it was */
   var planById = {};
@@ -3270,16 +3293,44 @@ function confirmRecompact(){
     var p = planById[m.id];
     if (!p) return m;
     var c = Object.assign({}, m);
-    if (p.to !== p.from){ c.jornada = p.to; c.fecha = ""; c.hora = ""; c.pista = ""; changed++; }
-    c.fechaLimite = fecha;
+    c.jornada = p.to; c.fecha = ""; c.hora = ""; c.pista = "";
+    delete c.fechaLimite;
+    changed++;
     return c;
   });
   setSaving("Recompactando…");
   setDoc(doc(db, "state", "matches"), { list: newList }).then(function(){
     STATE.matches = newList;
-    setSaveResult(true, plan.length+" partido"+(plan.length===1?"":"s")+" pendiente"+(plan.length===1?"":"s")+" actualizado"+(plan.length===1?"":"s")+" ("+changed+" cambiado"+(changed===1?"":"s")+" de jornada), fecha límite "+formatFechaLimite(fecha)+" ✓");
+    setSaveResult(true, changed+" partido"+(changed===1?"":"s")+" cambiado"+(changed===1?"":"s")+" de jornada ✓ — ponles fecha límite desde cada jornada si quieres.");
   }).catch(function(err){
     setSaveResult(false, "No se pudo guardar la recompactación (" + (err && err.code || "error") + "). No se ha cambiado nada.");
+  });
+}
+/* sets (or with clear=true removes) fechaLimite on the unplayed matches of ONE jornada.
+   Matches of other jornadas and every played match are returned untouched (same object). */
+function applyJornadaLimite(jStr, clear){
+  var j = Number(jStr);
+  var fecha = clear ? "" : valOf("jornada-limite-" + jStr);
+  if (!clear && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)){ setSaveResult(false, "Elige una fecha límite para la Jornada " + j + "."); return; }
+  var n = 0;
+  var newList = STATE.matches.map(function(m){
+    if (Number(m.jornada) !== j || isMatchPlayed(m)) return m;
+    if (clear ? !("fechaLimite" in m) : m.fechaLimite === fecha) return m;
+    var c = Object.assign({}, m);
+    if (clear) delete c.fechaLimite; else c.fechaLimite = fecha;
+    n++;
+    return c;
+  });
+  if (!n){ setSaveResult(true, clear ? "La Jornada " + j + " ya no tenía fecha límite." : "La Jornada " + j + " ya tenía esa fecha límite."); return; }
+  setSaving("Guardando…");
+  setDoc(doc(db, "state", "matches"), { list: newList }).then(function(){
+    STATE.matches = newList;
+    delete ui.jornadaLimiteDraft[jStr];
+    setSaveResult(true, clear
+      ? "Fecha límite quitada de " + n + " partido" + (n===1?"":"s") + " de la Jornada " + j + " ✓"
+      : "Fecha límite " + formatFechaLimite(fecha) + " aplicada a " + n + " partido" + (n===1?"":"s") + " sin jugar de la Jornada " + j + " ✓");
+  }).catch(function(err){
+    setSaveResult(false, "No se pudo guardar (" + (err && err.code || "error") + "). No se ha cambiado nada.");
   });
 }
 function saveMatch(id){
@@ -3599,6 +3650,8 @@ document.addEventListener("click", function(e){
     case "ask-recompact": askRecompact(); break;
     case "confirm-recompact": confirmRecompact(); break;
     case "cancel-recompact": cancelRecompact(); break;
+    case "apply-jornada-limite": applyJornadaLimite(el.getAttribute("data-jornada"), false); break;
+    case "clear-jornada-limite": applyJornadaLimite(el.getAttribute("data-jornada"), true); break;
     case "save-match": saveMatch(id); break;
     case "save-info": saveInfo(); break;
     case "add-round": addRound(); break;
@@ -3664,7 +3717,7 @@ document.addEventListener("input", function(e){
   else if (e.target.id === "player-contacto"){ ui.playerContactDraft = e.target.value; }
   else if (e.target.id === "player-j1"){ ui.playerName1Draft = e.target.value; }
   else if (e.target.id === "player-j2"){ ui.playerName2Draft = e.target.value; }
-  else if (e.target.id === "recompact-fecha"){ ui.recompactFecha = e.target.value; }
+  else if (e.target.id && e.target.id.indexOf("jornada-limite-") === 0){ ui.jornadaLimiteDraft[e.target.id.slice(15)] = e.target.value; }
 });
 document.addEventListener("click", function(e){
   var toggle = e.target.closest(".password-toggle");
