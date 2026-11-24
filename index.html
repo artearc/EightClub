@@ -50,7 +50,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
-  getFirestore, doc, getDoc, setDoc, onSnapshot, collection, addDoc, updateDoc, deleteDoc, serverTimestamp,
+  getFirestore, doc, getDoc, getDocFromServer, setDoc, onSnapshot, collection, addDoc, updateDoc, deleteDoc, serverTimestamp,
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
@@ -121,7 +121,8 @@ const auth = getAuth(app);
 if (window.emailjs && EMAILJS_PUBLIC_KEY){ try { emailjs.init(EMAILJS_PUBLIC_KEY); } catch(e){} }
 
 const STATE = {
-  loaded: { info:false, pairs:false, matches:false, bracket:false, faqs:false, revisiones:false, camisetas:false, camisetaVotos:false },
+  loaded: { info:false, pairs:false, matches:false, bracket:false, faqs:false, revisiones:false, camisetas:false, camisetaVotos:false, pairPins:false },
+  loadFailed: {},
   info: { categoria:"Quinta Masculina", sede:"Padel Club Alicante Indoor",
     direccion:"Av. Neptuno 15, Pol. Ind. Llano del Espartal, 03007 Alicante",
     whatsapp:"673939455", fechas:"", precio:"", plazo:"", contacto: CONTACT_EMAIL,
@@ -134,13 +135,17 @@ const STATE = {
   revisiones: [],
   camisetas: [],
   camisetaVotos: [],
-  emailUsage: { count:0, monthKey:"" }
+  emailUsage: { count:0, monthKey:"" },
+  pairContacts: {},
+  pairPins: {}      /* organizer-only mirror of each pair's PIN, see commitPairsWithPins */
 };
 var RATE_LIMIT_SECONDS = 20;
 
 const ui = { modalOpen:false, unlocked:false, tab:"info", saving:false, saveMsg:"", saveType:"", loginError:false, mobileMenuOpen:false, authUser:null, openFaq:null, showBackTop:false, faqDeleteConfirm:null, solicitudesSubtab:"pendientes", clearHistoryConfirm:false,
   playerModalOpen:false, playerPairId:null, playerSubmitMsg:"",
-  playerAuthError:"", playerAuthBusy:false, lastRevisionSubmitAt:0,
+  playerAuthError:"", playerAuthBusy:false, playerAccessPairDraft:null, lastRevisionSubmitAt:0,
+  playerCorrecting:null, playerContactDraft:null, playerName1Draft:null, playerName2Draft:null, playerContactMsg:"", playerContactError:"", playerContactBusy:false,
+  fixtureConfirm:null, recompactConfirm:false, recompactFecha:"", recompactError:"",
   profileSlug:null, rankingUpdates:[], rankingSearch:"", cuadrosTorneo:null,
   camisetaModalOpen:false, camisetaIndex:0, camisetaVoted:null, camisetaVoteEstado:null, camisetaVoteError:"", camisetaVoteBusy:false, camisetaUploadBusy:false, camisetaView:"carousel", camisetaNombreDraft:"" };
 try {
@@ -191,7 +196,173 @@ function escHtml(s){
   });
 }
 function pairById(id){ for (var i=0;i<STATE.pairs.length;i++){ if (STATE.pairs[i].id===id) return STATE.pairs[i]; } return null; }
-function pairLabel(id){ var p = pairById(id); return p ? (p.j1+" / "+p.j2) : "Pareja eliminada"; }
+function pairLabel(id){ var p = pairById(id); return p ? pairDisplayLabel(p) : "Pareja eliminada"; }
+
+/* ---------- player identity ----------
+   Each player slot of a pair carries a stable id (pair.j1Id / pair.j2Id, added by
+   planIdMigration — never changed afterwards). The name a pair was created with
+   (pair.j1/j2 in state/pairs) is never rewritten either; a pair can choose a new display
+   name from its own panel, stored in pairContacts/{pairId}.j1/j2 (see savePlayerContact),
+   and that's what every screen shows. The ranking groups by id, so a rename keeps the
+   whole history under the new name. The SAME person can appear in several pairs (another
+   torneo, another partner): the migration gives every slot with the same slugified name
+   the same id, which is exactly how the ranking already merged them by name — so
+   assigning ids changes nobody's numbers. */
+function pairOriginalLabel(p){ return p.j1 + " / " + p.j2; }
+function overrideMs(o){ return (o && o.actualizadoEnMs) || 0; }
+/* the newest name chosen for this player id from any pair that contains it */
+function playerOverrideName(playerId){
+  if (!playerId) return null;
+  var best = null, bestMs = -1;
+  STATE.pairs.forEach(function(p){
+    var o = STATE.pairContacts[p.id];
+    if (!o) return;
+    [1,2].forEach(function(n){
+      var v = o["j"+n];
+      if (p["j"+n+"Id"] === playerId && typeof v === "string" && v.trim() && overrideMs(o) > bestMs){ best = v.trim(); bestMs = overrideMs(o); }
+    });
+  });
+  return best;
+}
+/* display name of a pair's player n (1|2) */
+function pairPlayerName(p, n){
+  var id = p["j"+n+"Id"];
+  if (id){ var o = playerOverrideName(id); if (o) return o; }
+  else {
+    var own = STATE.pairContacts[p.id];
+    if (own && typeof own["j"+n] === "string" && own["j"+n].trim()) return own["j"+n].trim();
+  }
+  return p["j"+n];
+}
+function pairDisplayLabel(p){ return pairPlayerName(p, 1) + " / " + pairPlayerName(p, 2); }
+/* a cuadros side as it should be shown: the stored text exactly as it was played, unless
+   that side carries player ids and one of those players has since chosen a new name */
+function bracketSideDisplay(m, side){
+  var text = m[side], ids = m[side+"Ids"];
+  if (!Array.isArray(ids) || ids.length !== 2) return text;
+  var o1 = playerOverrideName(ids[0]), o2 = playerOverrideName(ids[1]);
+  if (!o1 && !o2) return text;
+  var parts = splitPairLabel(text);
+  return (o1 || parts.j1) + " / " + (o2 || parts.j2);
+}
+/* which side of a cuadros match this pair is on: by player ids when the side has them,
+   otherwise by the label text (the way it always worked) */
+function bracketSideOfPair(bm, pair){
+  function sameIds(ids){
+    return Array.isArray(ids) && ids.length === 2 && pair.j1Id && pair.j2Id
+      && ((ids[0] === pair.j1Id && ids[1] === pair.j2Id) || (ids[0] === pair.j2Id && ids[1] === pair.j1Id));
+  }
+  if (sameIds(bm.aIds)) return "a";
+  if (sameIds(bm.bIds)) return "b";
+  var labels = [pairOriginalLabel(pair), pairDisplayLabel(pair)];
+  if (!Array.isArray(bm.aIds) && labels.indexOf(bm.a) !== -1) return "a";
+  if (!Array.isArray(bm.bIds) && labels.indexOf(bm.b) !== -1) return "b";
+  return null;
+}
+/* slug of a pair's ORIGINAL name → player id. Used for cuadros sides that couldn't be
+   tied to a pair (a partnership that never existed as a liga pair, say): their names
+   still resolve to the same player the ranking merged them with before ids existed. */
+function playerIdsBySlug(){
+  var map = {};
+  STATE.pairs.forEach(function(p){
+    [1,2].forEach(function(n){
+      var id = p["j"+n+"Id"], s = slugifyName(p["j"+n]);
+      if (id && s && !map[s]) map[s] = id;
+    });
+  });
+  return map;
+}
+/* ranking participants of one result side: [{key, name}] — key is the player id when
+   known, else the slugified name (exactly the pre-id behaviour) */
+function ligaSidePlayers(p){
+  return [1,2].map(function(n){
+    return { key: p["j"+n+"Id"] || slugifyName(p["j"+n]), name: pairPlayerName(p, n), alias: slugifyName(p["j"+n]) };
+  });
+}
+function ligaMatchPlayerKeys(m){
+  return ligaSidePlayers(pairById(m.pairA)).concat(ligaSidePlayers(pairById(m.pairB))).map(function(p){ return p.key; });
+}
+function bracketSidePlayers(m, side, idsBySlug){
+  var parts = splitPairLabel(m[side]), ids = m[side+"Ids"];
+  return [parts.j1, parts.j2].map(function(raw, i){
+    var key = (Array.isArray(ids) && ids.length === 2 && ids[i]) || idsBySlug[slugifyName(raw)] || slugifyName(raw);
+    return { key: key, name: playerOverrideName(key) || raw, alias: slugifyName(raw) };
+  });
+}
+/* id for a brand-new pair's player: reuse the id of a player already known under that
+   name (current display name first, then original), same merging rule as the migration */
+function playerIdForNewName(name){
+  var s = slugifyName(name);
+  if (!s) return uid("pl");
+  for (var i = 0; i < STATE.pairs.length; i++){
+    var p = STATE.pairs[i];
+    for (var n = 1; n <= 2; n++){ if (p["j"+n+"Id"] && slugifyName(pairPlayerName(p, n)) === s) return p["j"+n+"Id"]; }
+  }
+  return playerIdsBySlug()[s] || uid("pl");
+}
+/* the cuadros ids for a typed "Nombre1 / Nombre2" label: only when exactly one pair has
+   that label (current or original) and that pair already has its ids — never a guess */
+function resolveLabelIds(label){
+  if (!label || label === "Por definir") return null;
+  return uniqueIdsOf(STATE.pairs.filter(function(p){ return pairOriginalLabel(p) === label || pairDisplayLabel(p) === label; }));
+}
+/* the [j1Id, j2Id] shared by every pair in `hits`, or null when there are none, one of
+   them has no ids yet, or they're genuinely different players. Two pairs with the very
+   same two names (the same couple signed up again for another torneo) carry the same
+   ids — see planIdMigration — so they don't count as ambiguous. */
+function uniqueIdsOf(hits){
+  if (!hits.length) return null;
+  var sigs = {};
+  for (var i = 0; i < hits.length; i++){
+    if (!hits[i].j1Id || !hits[i].j2Id) return null;
+    sigs[hits[i].j1Id + "|" + hits[i].j2Id] = [hits[i].j1Id, hits[i].j2Id];
+  }
+  var keys = Object.keys(sigs);
+  return keys.length === 1 ? sigs[keys[0]] : null;
+}
+/* additive id migration, pure (reads STATE, returns what to write): j1Id/j2Id for pairs
+   missing them, aIds/bIds for cuadros sides that match exactly one pair by its exact
+   original label. Nothing existing is changed — new objects only gain the new fields,
+   untouched ones are returned as the very same objects. */
+function planIdMigration(){
+  var bySlug = playerIdsBySlug();
+  var pairsChanged = 0;
+  var pairs = STATE.pairs.map(function(p){
+    if (p.j1Id && p.j2Id) return p;
+    var add = {};
+    [1,2].forEach(function(n){
+      var f = "j"+n+"Id";
+      if (p[f]) return;
+      var s = slugifyName(p["j"+n]);
+      var id = (s && bySlug[s]) || uid("pl");
+      if (s && !bySlug[s]) bySlug[s] = id;
+      add[f] = id;
+    });
+    pairsChanged++;
+    return Object.assign({}, p, add);
+  });
+  var byLabel = {};
+  pairs.forEach(function(p){ var l = pairOriginalLabel(p); (byLabel[l] = byLabel[l] || []).push(p); });
+  var sidesResolved = 0, unresolved = [];
+  var rounds = STATE.bracket.map(function(r){
+    var changed = false;
+    var matches = (r.matches || []).map(function(m){
+      var add = {};
+      ["a","b"].forEach(function(side){
+        if (Array.isArray(m[side+"Ids"])) return;
+        if (m[side] === "Por definir") return;
+        var ids = uniqueIdsOf(byLabel[m[side]] || []);
+        if (ids){ add[side+"Ids"] = ids; sidesResolved++; }
+        else unresolved.push({ torneo: roundTorneo(r), ronda: r.name, texto: m[side], motivo: (byLabel[m[side]] || []).length ? "varias parejas distintas con ese nombre" : "ninguna pareja actual se llama así" });
+      });
+      if (!Object.keys(add).length) return m;
+      changed = true;
+      return Object.assign({}, m, add);
+    });
+    return changed ? Object.assign({}, r, { matches: matches }) : r;
+  });
+  return { pairs: pairs, pairsChanged: pairsChanged, rounds: rounds, sidesResolved: sidesResolved, unresolved: unresolved };
+}
 
 /* Rounds display in bracket-logical order (earliest stage → final) no matter what order
    the organizer created them in — ranked by keyword in the round's name, most-specific
@@ -285,7 +456,7 @@ function headToHeadResult(aId, bId){
 function computeStandings(){
   var table = {};
   STATE.pairs.filter(function(p){ return p.confirmed; }).forEach(function(p){
-    table[p.id] = { id:p.id, label:p.j1+" / "+p.j2, pj:0, pg:0, pp:0, sf:0, sc:0, gf:0, gc:0, pts:0 };
+    table[p.id] = { id:p.id, label:pairDisplayLabel(p), pj:0, pg:0, pp:0, sf:0, sc:0, gf:0, gc:0, pts:0 };
   });
   STATE.matches.forEach(function(m){
     if (!m.played) return;
@@ -354,19 +525,19 @@ function collectRankedResults(){
   });
   var steps = Object.keys(byJornada).map(Number).sort(function(a,b){ return a-b; }).map(function(j){
     return { label:"Jornada "+j, results: byJornada[j].map(function(m){
-      var pa = pairById(m.pairA), pb = pairById(m.pairB);
-      return { aNames:[pa.j1,pa.j2], bNames:[pb.j1,pb.j2], winA:m.setsA > m.setsB, setsA:m.setsA, setsB:m.setsB };
+      var pa = ligaSidePlayers(pairById(m.pairA)), pb = ligaSidePlayers(pairById(m.pairB));
+      return { aPlayers:pa, bPlayers:pb, winA:m.setsA > m.setsB, setsA:m.setsA, setsB:m.setsB };
     }) };
   });
+  var idsBySlug = playerIdsBySlug();
   sortedRounds().forEach(function(r){
     var results = (r.matches || []).filter(function(m){
       if (!m.ganador) return false;
       var pa = splitPairLabel(m.a), pb = splitPairLabel(m.b);
       return !pa.tbd && !pb.tbd && pa.j1 && pa.j2 && pb.j1 && pb.j2;
     }).map(function(m){
-      var pa = splitPairLabel(m.a), pb = splitPairLabel(m.b);
       var sets = m.sets || [];
-      return { aNames:[pa.j1,pa.j2], bNames:[pb.j1,pb.j2], winA:m.ganador === m.a,
+      return { aPlayers:bracketSidePlayers(m, "a", idsBySlug), bPlayers:bracketSidePlayers(m, "b", idsBySlug), winA:m.ganador === m.a,
         setsA: sets.filter(function(s){ return s.a > s.b; }).length,
         setsB: sets.filter(function(s){ return s.b > s.a; }).length };
     });
@@ -383,11 +554,16 @@ function collectRankedResults(){
 function computePlayerRanking(){
   var RATING_START = 1500, K = 32;
   var players = {};
-  function ensure(name){
-    var slug = slugifyName(name);
+  /* keyed by player id when the result knows it, else by slugified name (see
+     ligaSidePlayers/bracketSidePlayers) — row.slug is that key. aliases = every name the
+     player has appeared under, so an old #jugador/<nombre> link still finds them. */
+  function ensure(pl){
+    var slug = pl.key;
     if (!slug) return null;
-    if (!players[slug]) players[slug] = { slug:slug, name:name, rating:RATING_START, pj:0, pg:0, pp:0, sf:0, sc:0, form:[], history:[] };
-    players[slug].name = name;
+    if (!players[slug]) players[slug] = { slug:slug, name:pl.name, rating:RATING_START, pj:0, pg:0, pp:0, sf:0, sc:0, form:[], history:[], aliases:{} };
+    players[slug].name = pl.name;
+    players[slug].aliases[slugifyName(pl.name)] = true;
+    if (pl.alias) players[slug].aliases[pl.alias] = true;
     return players[slug];
   }
   var steps = collectRankedResults();
@@ -399,7 +575,7 @@ function computePlayerRanking(){
     }
     var deltas = {};
     step.results.forEach(function(res){
-      var pa1 = ensure(res.aNames[0]), pa2 = ensure(res.aNames[1]), pb1 = ensure(res.bNames[0]), pb2 = ensure(res.bNames[1]);
+      var pa1 = ensure(res.aPlayers[0]), pa2 = ensure(res.aPlayers[1]), pb1 = ensure(res.bPlayers[0]), pb2 = ensure(res.bPlayers[1]);
       var ratingA = (pa1.rating + pa2.rating) / 2, ratingB = (pb1.rating + pb2.rating) / 2;
       var expA = 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
       var delta = K * ((res.winA ? 1 : 0) - expA);
@@ -412,7 +588,7 @@ function computePlayerRanking(){
   var rows = Object.keys(players).map(function(s){
     var p = players[s];
     var prevRating = prevSnapshot && (s in prevSnapshot) ? prevSnapshot[s] : p.rating;
-    return { slug:p.slug, name:p.name, rating:Math.round(p.rating), prevRating:Math.round(prevRating),
+    return { slug:p.slug, name:p.name, nameSlug:slugifyName(p.name), aliases:Object.keys(p.aliases), rating:Math.round(p.rating), prevRating:Math.round(prevRating),
       pj:p.pj, pg:p.pg, pp:p.pp, sf:p.sf, sc:p.sc,
       winRate: p.pj ? Math.round(p.pg / p.pj * 100) : 0, form: p.form.slice(-5), history: p.history };
   });
@@ -427,16 +603,17 @@ function computeHeadToHead(slug){
   var results = {};
   collectRankedResults().forEach(function(step){
     step.results.forEach(function(res){
-      var inA = res.aNames.map(slugifyName).indexOf(slug) !== -1;
-      var inB = res.bNames.map(slugifyName).indexOf(slug) !== -1;
+      function keys(ps){ return ps.map(function(p){ return p.key; }); }
+      var inA = keys(res.aPlayers).indexOf(slug) !== -1;
+      var inB = keys(res.bPlayers).indexOf(slug) !== -1;
       if (!inA && !inB) return;
-      var oppNames = inA ? res.bNames : res.aNames;
+      var opps = inA ? res.bPlayers : res.aPlayers;
       var won = inA ? res.winA : !res.winA;
-      oppNames.forEach(function(name){
-        var oslug = slugifyName(name);
+      opps.forEach(function(o){
+        var oslug = o.key;
         if (!oslug || oslug === slug) return;
-        if (!results[oslug]) results[oslug] = { slug:oslug, name:name, wins:0, losses:0 };
-        results[oslug].name = name;
+        if (!results[oslug]) results[oslug] = { slug:oslug, name:o.name, wins:0, losses:0 };
+        results[oslug].name = o.name;
         if (won) results[oslug].wins++; else results[oslug].losses++;
       });
     });
@@ -450,9 +627,9 @@ function computeHeadToHead(slug){
    themselves (see saveMatch/acceptRevision/saveBracketMatch) since it has to happen
    before they mutate STATE — computePlayerRanking() always reads the CURRENT STATE. */
 var rankingToastTimer = null;
-function announceRankingChange(beforeRows, names){
+function announceRankingChange(beforeRows, keys){
   var afterRows = computePlayerRanking();
-  var updates = names.map(slugifyName).map(function(slug){
+  var updates = keys.map(function(slug){
     var before = beforeRows.filter(function(r){ return r.slug === slug; })[0];
     var after = afterRows.filter(function(r){ return r.slug === slug; })[0];
     if (!after) return null;
@@ -472,7 +649,8 @@ function announceBracketRankingChange(beforeRows, bm){
   if (!beforeRows || !bm.ganador) return;
   var pa = splitPairLabel(bm.a), pb = splitPairLabel(bm.b);
   if (pa.tbd || pb.tbd || !pa.j1 || !pa.j2 || !pb.j1 || !pb.j2) return;
-  announceRankingChange(beforeRows, [pa.j1, pa.j2, pb.j1, pb.j2]);
+  var bySlug = playerIdsBySlug();
+  announceRankingChange(beforeRows, bracketSidePlayers(bm, "a", bySlug).concat(bracketSidePlayers(bm, "b", bySlug)).map(function(p){ return p.key; }));
 }
 
 function emptyState(big, text){
@@ -696,6 +874,94 @@ function matchScheduleText(m){
   return parts.join(" · ");
 }
 function icsPad2(n){ return n < 10 ? "0"+n : String(n); }
+
+/* ---------- jornada recompaction / fecha límite ----------
+   A match counts as played if it's flagged so OR already carries set scores — the
+   recompaction must never touch either kind, so it errs on the side of "played". */
+function isMatchPlayed(m){ return m.played === true || (Array.isArray(m.sets) && m.sets.length > 0); }
+/* local YYYY-MM-DD — toISOString() would roll the day over for anyone east of UTC late
+   at night, which for a deadline is exactly the wrong day to be off by one. */
+function ymdLocal(d){ return d.getFullYear() + "-" + icsPad2(d.getMonth()+1) + "-" + icsPad2(d.getDate()); }
+function proximoDomingo(desde){
+  var d = new Date(desde); d.setHours(0,0,0,0);
+  var add = (7 - d.getDay()) % 7 || 7;
+  d.setDate(d.getDate() + add);
+  return d;
+}
+function defaultFechaLimite(){
+  var d = proximoDomingo(new Date());
+  d.setDate(d.getDate() + 14);
+  return ymdLocal(d);
+}
+function formatFechaLimite(ymd){
+  var p = String(ymd || "").split("-");
+  return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : String(ymd || "");
+}
+function matchDeadlineText(m){
+  return (!isMatchPlayed(m) && m.fechaLimite) ? "Fecha límite: " + formatFechaLimite(m.fechaLimite) : "";
+}
+/* the new jornada for every unplayed liga match, without touching who plays whom: each
+   pair resumes right after the last jornada it actually played, and a match lands on
+   the later of its two pairs' next free jornadas so neither pair gets two matches in the
+   same new jornada. Walks pending matches in their original jornada order (then id, so
+   the result is deterministic). Pure — returns the plan, mutates nothing. Matches whose
+   pairs no longer exist are left out entirely (they're hidden everywhere else too). */
+function planRecompact(){
+  var siguienteLibre = {};
+  STATE.matches.forEach(function(m){
+    if (!isMatchPlayed(m)) return;
+    var j = Number(m.jornada) || 0;
+    siguienteLibre[m.pairA] = Math.max(siguienteLibre[m.pairA] || 1, j + 1);
+    siguienteLibre[m.pairB] = Math.max(siguienteLibre[m.pairB] || 1, j + 1);
+  });
+  function libreDe(pid){ return siguienteLibre[pid] || 1; }
+  return STATE.matches
+    .filter(function(m){ return !isMatchPlayed(m) && matchPairsExist(m); })
+    .sort(function(a, b){ return (Number(a.jornada) - Number(b.jornada)) || String(a.id).localeCompare(String(b.id)); })
+    .map(function(m){
+      var nueva = Math.max(libreDe(m.pairA), libreDe(m.pairB));
+      siguienteLibre[m.pairA] = nueva + 1;
+      siguienteLibre[m.pairB] = nueva + 1;
+      return { match:m, from:Number(m.jornada), to:nueva };
+    });
+}
+
+/* a pair can update its own contact email from the player panel, but state/pairs is
+   organizer-write-only (and rewriting the whole shared list from a player's browser is
+   exactly what those rules exist to prevent) — so the player's edit lives in its own
+   pairContacts/{pairId} doc and wins over the original here. state/pairs itself is
+   never touched by it. */
+function pairContacto(p){
+  var o = p && STATE.pairContacts[p.id];
+  return (o && o.contacto) || (p && p.contacto) || "";
+}
+
+/* set-by-set score entry (or read-only display) laid out as a small scoreboard: one row
+   per pair with its real name always visible next to its own three boxes, so once a
+   number is typed in there's still no doubt whose column is whose — a placeholder
+   ("A", "Vos.") vanishes the moment you type. rows: [{label, sub, vals:[..3], ids:[..3]
+   (editable only), winner}] */
+function renderScoreGrid(rows, opts){
+  opts = opts || {};
+  var head = '<div class="score-grid-row score-grid-head"><span></span><span>Set 1</span><span>Set 2</span><span>Set 3</span></div>';
+  return '<div class="score-grid'+(opts.readonly ? " score-grid--readonly" : "")+'">' + head + rows.map(function(r){
+    var cells = [0,1,2].map(function(i){
+      var v = r.vals ? r.vals[i] : "";
+      var shown = (v === null || v === undefined) ? "" : String(v);
+      if (opts.readonly) return '<span class="score-grid-cell">'+(shown === "" ? "–" : escHtml(shown))+'</span>';
+      return '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="'+r.ids[i]+'" value="'+escHtml(shown)+'" aria-label="'+escHtml(r.label+" · set "+(i+1))+'">';
+    }).join("");
+    return '<div class="score-grid-row'+(r.winner ? " score-grid-row--winner" : "")+'">'
+      + '<span class="score-grid-name">'+escHtml(r.label)+(r.sub ? '<small>'+escHtml(r.sub)+'</small>' : "")+'</span>'
+      + cells + '</div>';
+  }).join("") + '</div>';
+}
+function setsSideVals(sets, side){
+  return [0,1,2].map(function(i){ var s = (sets || [])[i]; return s ? (side === "a" ? s.a : s.b) : ""; });
+}
+function setsWonBy(sets, side){
+  return (sets || []).filter(function(s){ return side === "a" ? s.a > s.b : s.b > s.a; }).length;
+}
 function icsEscape(text){
   return String(text || "").replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\n/g,"\\n");
 }
@@ -760,13 +1026,16 @@ function renderMatchRow(m){
     scoreHtml = '<span class="badge badge--pending">Pendiente</span>';
   }
   var schedule = matchScheduleText(m);
+  var deadline = matchDeadlineText(m);
   var showIcs = !m.played && m.fecha;
   return '<li class="match-row fx-reveal">'
     + '<span class="'+(m.played && m.setsA>m.setsB ? "winner":"")+'">'+escHtml(labelA)+'</span>'
     + '<span class="vs">vs</span>'
     + '<span class="'+(m.played && m.setsB>m.setsA ? "winner":"")+'">'+escHtml(labelB)+'</span>'
     + '<span class="match-result">'+scoreHtml+'</span>'
-    + (schedule ? '<span class="match-meta">'+escHtml(schedule)
+    + ((schedule || deadline) ? '<span class="match-meta">'+escHtml(schedule)
+        + (schedule && deadline ? " · " : "")
+        + (deadline ? '<span class="deadline-tag">'+escHtml(deadline)+'</span>' : "")
         + (showIcs ? ' <button class="ics-btn" data-action="add-to-calendar" data-id="'+m.id+'" type="button">'+calendarIconSvg()+' Calendario</button>' : "")
         + '</span>' : "")
     + '</li>';
@@ -855,9 +1124,19 @@ function renderSparkline(history){
     + '<div class="profile-sparkline-label">Evolución del rating · '+history.length+' jornada'+(history.length===1?"":"s")+'</div>'
     + '</div>';
 }
+/* a profile is addressed by its ranking key (player id, or slug for players without
+   one); a #jugador/<nombre> link — including one shared before ids existed or before a
+   rename — still lands on the right row via the current name or any former one */
+function findRankingRow(rows, v){
+  if (!v) return null;
+  return rows.filter(function(x){ return x.slug === v; })[0]
+    || rows.filter(function(x){ return x.nameSlug === v; })[0]
+    || rows.filter(function(x){ return (x.aliases || []).indexOf(v) !== -1; })[0]
+    || null;
+}
 function renderPlayerProfileModal(rows){
   if (!ui.profileSlug) return "";
-  var r = rows.filter(function(x){ return x.slug === ui.profileSlug; })[0];
+  var r = findRankingRow(rows, ui.profileSlug);
   if (!r) return "";
   var h2h = computeHeadToHead(r.slug);
   return '<div class="modal-overlay" data-modal="profile"><div class="modal-panel modal-panel--profile">'
@@ -916,8 +1195,8 @@ function renderCuadros(){
             var tiltZ = multiRound ? 0 : (mi % 2 === 0 ? -1.3 : 1);
             return '<div class="bracket-match fx-reveal"'+(tiltZ?' data-tilt-z="'+tiltZ+'"':"")+'>'
               + (m.resultado ? '<button class="share-btn" data-action="share-result" data-tipo="cuadro" data-id="'+m.id+'" data-round="'+r.id+'" type="button" aria-label="Compartir resultado" title="Compartir resultado">'+shareIconSvg()+'</button>' : "")
-              + '<div class="'+(m.ganador && m.ganador===m.a ? "winner":"")+'">'+escHtml(m.a)+'</div>'
-              + '<div class="'+(m.ganador && m.ganador===m.b ? "winner":"")+'">'+escHtml(m.b)+'</div>'
+              + '<div class="'+(m.ganador && m.ganador===m.a ? "winner":"")+'">'+escHtml(bracketSideDisplay(m, "a"))+'</div>'
+              + '<div class="'+(m.ganador && m.ganador===m.b ? "winner":"")+'">'+escHtml(bracketSideDisplay(m, "b"))+'</div>'
               + (m.resultado ? '<div class="bracket-score">'+escHtml(m.resultado)+'</div>' : "")
               + '</div>';
           }).join("")
@@ -961,12 +1240,12 @@ function renderFooter(){
 }
 
 /* ---------- player panel ---------- */
-/* access is a single PIN per pair (pair.pin, admin-generated/regenerated from the
-   Parejas tab — see regeneratePin) — no email, no password, no separate account to
-   create. Either player types it in and gets the same view; there's nothing to
-   distinguish an "owner" from a "companion" any more. Whoever has the PIN signs in
-   anonymously (see tryPlayerAccess/ensureAnonAuth) purely so submitPlayerResult has a
-   stable uid to stamp a result with — it's not what gates access, the PIN is. A result
+/* access is a single PIN per pair (kept in the organizer-only pairPins/{pairId}, generated
+   from the Parejas tab — see regeneratePin) — no email, no password, no separate account
+   to create. Either player picks the pair, types the PIN and gets the same view. The
+   browser signs in anonymously and writes a playerSessions/{uid} doc that the security
+   rules only accept with the right PIN (see tryPlayerAccess); that session is what lets
+   this uid edit the pair's data or send results. A result
    never writes straight into state/matches or state/bracket either way: it goes into
    the public "revisiones" collection as its own doc with estado:"pendiente" (plus a
    rate-limit stamp), and only an organizer's accept-revision/reject-revision action
@@ -1063,8 +1342,11 @@ function renderPlayerModal(rankingRows){
   if (pair) return renderPlayerDashboard(pair, rankingRows);
 
   var errHtml = ui.playerAuthError ? '<p class="login-error">'+escHtml(ui.playerAuthError)+'</p>' : "";
-  var body = '<p>Escribe el PIN de vuestra pareja para ver vuestros partidos y enviar resultados. Os lo dio el organizador — cualquiera de los dos puede usarlo, desde cualquier dispositivo.</p>'
-    + '<div class="field"><span>PIN de la pareja</span><input id="player-access-pin" type="text" inputmode="numeric" maxlength="4" autocomplete="off"></div>'
+  var options = STATE.pairs.slice().sort(function(a, b){ return pairDisplayLabel(a).localeCompare(pairDisplayLabel(b), "es"); })
+    .map(function(p){ return '<option value="'+escHtml(p.id)+'"'+(ui.playerAccessPairDraft === p.id ? " selected" : "")+'>'+escHtml(pairDisplayLabel(p))+'</option>'; }).join("");
+  var body = '<p>Elige vuestra pareja y escribid vuestro PIN para ver vuestros partidos y enviar resultados. Os lo dio el organizador — cualquiera de los dos puede usarlo, desde cualquier dispositivo.</p>'
+    + '<label class="field"><span>Pareja</span><select id="player-access-pair"><option value="">Elige vuestra pareja…</option>'+options+'</select></label>'
+    + '<div class="field" style="margin-top:.8rem;"><span>PIN de la pareja</span><input id="player-access-pin" type="text" inputmode="numeric" maxlength="4" autocomplete="off"></div>'
     + errHtml
     + '<button class="btn btn-primary" style="margin-top:1rem;width:100%;justify-content:center;" data-action="try-player-access" type="button"'+(ui.playerAuthBusy?" disabled":"")+'>'+(ui.playerAuthBusy?"Entrando…":"Entrar")+'</button>';
   return '<div class="modal-overlay" data-modal="player"><div class="modal-panel modal-panel--login">'
@@ -1073,8 +1355,8 @@ function renderPlayerModal(rankingRows){
 }
 function renderProfileLinks(pair, rankingRows){
   rankingRows = rankingRows || [];
-  var links = [pair.j1, pair.j2].map(function(name){
-    var slug = slugifyName(name);
+  var links = ligaSidePlayers(pair).map(function(pl){
+    var slug = pl.key, name = pl.name;
     var has = rankingRows.some(function(r){ return r.slug === slug; });
     if (!has) return "";
     return '<button class="inline-link-btn" data-action="open-player-profile" data-slug="'+escHtml(slug)+'" type="button">Ver perfil de '+escHtml(name)+'</button>';
@@ -1082,95 +1364,161 @@ function renderProfileLinks(pair, rankingRows){
   if (!links.length) return "";
   return '<p style="margin-top:.6rem;display:flex;gap:1rem;flex-wrap:wrap;">' + links.join("") + '</p>';
 }
-/* the earliest still-unplayed liga match for this pair — dated ones sort first (soonest
-   date+time wins), undated ones fall back to jornada order at the end of the list, since
-   there's nothing else to sort them by. */
-function nextMatchFor(myLigaMatches){
-  var pending = myLigaMatches.filter(function(m){ return !m.played; });
-  if (!pending.length) return null;
-  pending.sort(function(a,b){
-    if (a.fecha && b.fecha) return (a.fecha+(a.hora||"")).localeCompare(b.fecha+(b.hora||""));
-    if (a.fecha) return -1;
-    if (b.fecha) return 1;
-    return a.jornada - b.jornada;
-  });
-  return pending[0];
-}
-function renderNextMatchCard(pair, m){
-  if (!m) return "";
-  var rival = pairLabel(m.pairA===pair.id ? m.pairB : m.pairA);
-  var schedule = matchScheduleText(m);
-  return '<div class="next-match-card">'
-    + '<div class="next-match-label">Tu próximo partido</div>'
-    + '<div class="next-match-rival">vs '+escHtml(rival)+'</div>'
-    + (schedule
-        ? '<div class="next-match-when">'+escHtml(schedule)+'</div>'
-        : '<div class="next-match-when next-match-when--tbd">Fecha todavía por confirmar</div>')
-    + (m.fecha ? '<button class="btn btn-outline btn-sm" data-action="add-to-calendar" data-id="'+m.id+'" type="button">'+calendarIconSvg()+' Añadir a mi calendario</button>' : "")
-    + '</div>';
-}
-function renderPlayerDashboard(pair, rankingRows){
-  var label = pair.j1 + " / " + pair.j2;
-  var myLigaMatches = STATE.matches.filter(function(m){ return m.pairA===pair.id || m.pairB===pair.id; });
-  var myBracketMatches = [];
-  sortedRounds().forEach(function(r){
-    (r.matches||[]).forEach(function(m){
-      if (m.a === label || m.b === label) myBracketMatches.push({ round:r, match:m });
-    });
-  });
-  function revisionFor(tipo, matchId){
+/* every liga and cuadros match this pair is in, flattened into one shape so the panel can
+   group them by "what do I need to do with it" (por jugar / jugados) instead of by
+   competition. Orphaned liga matches (rival pair deleted) are hidden, same as the public
+   Liga list. */
+function playerMatchItems(pair){
+  var label = pairDisplayLabel(pair);
+  function latestRevision(tipo, matchId){
     return STATE.revisiones.filter(function(rv){ return rv.pairId===pair.id && rv.tipo===tipo && rv.matchId===matchId; })
       .sort(function(a,b){ return (b.creadoEnMs||0) - (a.creadoEnMs||0); })[0] || null;
   }
-  var ligaHtml = myLigaMatches.length
-    ? myLigaMatches.map(function(m){
-        var mySide = m.pairA===pair.id ? "a" : "b";
-        var rival = pairLabel(mySide==="a" ? m.pairB : m.pairA);
-        return renderPlayerMatchRow(mySide, "liga", m.id, null, "Jornada "+m.jornada, rival, m.sets, revisionFor("liga", m.id), matchScheduleText(m));
-      }).join("")
-    : '<p class="loading-note">Todavía no tenéis partidos de liga.</p>';
-  var bracketHtml = myBracketMatches.map(function(o){
-    var mySide = o.match.a === label ? "a" : "b";
-    var rival = mySide==="a" ? o.match.b : o.match.a;
-    return renderPlayerMatchRow(mySide, "cuadro", o.match.id, o.round.id, o.round.name, rival, o.match.sets, revisionFor("cuadro", o.match.id));
-  }).join("");
-  return '<div class="modal-overlay" data-modal="player"><div class="modal-panel">'
-    + '<div class="modal-header"><h2>Hola, '+escHtml(pair.j1)+'</h2><button class="modal-close" data-action="close-player" type="button">✕</button></div>'
+  var items = [];
+  STATE.matches.forEach(function(m){
+    if (m.pairA !== pair.id && m.pairB !== pair.id) return;
+    if (!matchPairsExist(m)) return;
+    var mySide = m.pairA === pair.id ? "a" : "b";
+    var mine = mySide === "a" ? m.setsA : m.setsB, theirs = mySide === "a" ? m.setsB : m.setsA;
+    items.push({ key:"liga-"+m.id, tipo:"liga", id:m.id, roundId:null, order:Number(m.jornada) || 0,
+      etiqueta:"Liga · Jornada "+m.jornada, mySide:mySide, myLabel:label,
+      rival:pairLabel(mySide==="a" ? m.pairB : m.pairA), rivalTbd:false,
+      sets:m.sets || [], played:!!m.played, decided:!!m.played && mine !== theirs, won:!!m.played && mine > theirs,
+      schedule:matchScheduleText(m), fecha:m.fecha || "", hora:m.hora || "",
+      fechaLimite:m.played ? "" : (m.fechaLimite || ""), rev:latestRevision("liga", m.id) });
+  });
+  sortedRounds().forEach(function(r, ri){
+    (r.matches || []).forEach(function(bm){
+      var mySide = bracketSideOfPair(bm, pair);
+      if (!mySide) return;
+      var myText = mySide === "a" ? bm.a : bm.b;
+      var rivalText = mySide === "a" ? bm.b : bm.a;
+      var rival = bracketSideDisplay(bm, mySide === "a" ? "b" : "a");
+      var played = !!(bm.resultado || bm.ganador);
+      items.push({ key:"cuadro-"+bm.id, tipo:"cuadro", id:bm.id, roundId:r.id, order:10000 + ri,
+        etiqueta:roundTorneo(r)+" · "+r.name, mySide:mySide, myLabel:label,
+        rival:rival, rivalTbd:rivalText === "Por definir",
+        sets:bm.sets || [], played:played, decided:!!bm.ganador, won:!!bm.ganador && bm.ganador === myText,
+        schedule:"", fecha:"", hora:"", fechaLimite:"", rev:latestRevision("cuadro", bm.id) });
+    });
+  });
+  return items;
+}
+/* soonest first: matches with a concrete date go first (by date+time), then the rest by
+   jornada / bracket order — there's nothing else to sort an undated match by. */
+function comparePlayerItems(a, b){
+  if (a.fecha && b.fecha) return (a.fecha + a.hora).localeCompare(b.fecha + b.hora);
+  if (a.fecha) return -1;
+  if (b.fecha) return 1;
+  return a.order - b.order;
+}
+function renderNextMatchCard(item){
+  if (!item) return "";
+  var when = item.schedule
+    ? '<div class="next-match-when">'+escHtml(item.schedule)+'</div>'
+    : '<div class="next-match-when next-match-when--tbd">'+(item.fechaLimite ? "Todavía sin día ni hora concretos" : "Fecha todavía por confirmar")+'</div>';
+  return '<div class="next-match-card">'
+    + '<div class="next-match-label">Tu próximo partido · '+escHtml(item.etiqueta)+'</div>'
+    + '<div class="next-match-rival">vs '+escHtml(item.rival)+'</div>'
+    + when
+    + (item.fechaLimite ? '<div class="next-match-deadline">Fecha límite para jugarlo: <strong>'+escHtml(formatFechaLimite(item.fechaLimite))+'</strong></div>' : "")
+    + (item.tipo === "liga" && item.fecha ? '<button class="btn btn-outline btn-sm" data-action="add-to-calendar" data-id="'+item.id+'" type="button">'+calendarIconSvg()+' Añadir a mi calendario</button>' : "")
+    + '</div>';
+}
+function playerSection(title, count, inner){
+  return '<section class="player-section"><h4 class="player-section-title">'+escHtml(title)
+    + (count !== null ? ' <span class="player-section-count">'+count+'</span>' : "")
+    + '</h4>' + inner + '</section>';
+}
+function renderPlayerContactSection(pair){
+  function draft(v, cur){ return v !== null ? v : cur; }
+  var n1 = draft(ui.playerName1Draft, pairPlayerName(pair, 1)), n2 = draft(ui.playerName2Draft, pairPlayerName(pair, 2));
+  var mail = draft(ui.playerContactDraft, pairContacto(pair));
+  return '<p class="pm-note">Cómo aparecéis en la liga, los cuadros y el ranking, y el email donde os escribimos (confirmación de plaza, PIN…). Si cambiáis un nombre, vuestro historial y vuestra puntuación siguen siendo los mismos: solo cambia cómo se muestra.</p>'
+    + '<div class="player-data-form">'
+    +   '<label class="field"><span>Jugador 1</span><input id="player-j1" type="text" maxlength="60" autocomplete="off" value="'+escHtml(n1)+'"></label>'
+    +   '<label class="field"><span>Jugador 2</span><input id="player-j2" type="text" maxlength="60" autocomplete="off" value="'+escHtml(n2)+'"></label>'
+    +   '<label class="field player-data-email"><span>Email de contacto</span><input id="player-contacto" type="email" autocomplete="email" value="'+escHtml(mail)+'"></label>'
+    + '</div>'
+    + '<button class="btn btn-primary btn-sm" style="margin-top:.7rem;" data-action="save-player-contact" type="button"'+(ui.playerContactBusy ? " disabled" : "")+'>'+(ui.playerContactBusy ? "Guardando…" : "Guardar cambios")+'</button>'
+    + (ui.playerContactError ? '<p class="login-error">'+escHtml(ui.playerContactError)+'</p>' : "")
+    + (ui.playerContactMsg ? '<div class="status-banner">'+escHtml(ui.playerContactMsg)+'</div>' : "");
+}
+function renderPlayerDashboard(pair, rankingRows){
+  var label = pairDisplayLabel(pair);
+  var items = playerMatchItems(pair);
+  var pending = items.filter(function(i){ return !i.played; }).sort(comparePlayerItems);
+  var played = items.filter(function(i){ return i.played; }).sort(function(a, b){ return a.order - b.order; });
+  var awaiting = items.filter(function(i){ return i.rev && i.rev.estado === "pendiente"; });
+  var next = pending.filter(function(i){ return !i.rivalTbd && !(i.rev && i.rev.estado === "pendiente"); })[0] || null;
+  return '<div class="modal-overlay" data-modal="player"><div class="modal-panel modal-panel--player">'
+    + '<div class="modal-header"><h2>Hola, '+escHtml(pairPlayerName(pair, 1))+' y '+escHtml(pairPlayerName(pair, 2))+'</h2><button class="modal-close" data-action="close-player" type="button">✕</button></div>'
     + '<div class="modal-body">'
-    + '<p style="color:var(--ink-soft);font-size:.9rem;">Pareja: <strong>'+escHtml(label)+'</strong></p>'
+    + '<p class="player-pair-line">Pareja: <strong>'+escHtml(label)+'</strong></p>'
     + renderProfileLinks(pair, rankingRows)
-    + renderNextMatchCard(pair, nextMatchFor(myLigaMatches))
     + (ui.playerSubmitMsg ? '<div class="status-banner">'+escHtml(ui.playerSubmitMsg)+'</div>' : "")
-    + '<h4 style="margin-top:1.2rem;">Liga</h4>' + ligaHtml
-    + (myBracketMatches.length ? '<h4 style="margin-top:1.4rem;">Cuadros</h4>' + bracketHtml : "")
-    + '<button class="btn btn-ghost" style="margin-top:1.4rem;border-color:var(--border);color:var(--ink-faint);" data-action="player-logout" type="button">Cerrar sesión</button>'
+    + (awaiting.length ? '<div class="status-banner">Tenéis '+awaiting.length+' resultado'+(awaiting.length===1?"":"s")+' enviado'+(awaiting.length===1?"":"s")+' esperando a que el organizador lo'+(awaiting.length===1?"":"s")+' revise.</div>' : "")
+    + (next ? renderNextMatchCard(next) : (pending.length ? "" : '<div class="player-empty">No tenéis partidos pendientes ahora mismo.</div>'))
+    + playerSection("Por jugar", pending.length, pending.length
+        ? pending.map(function(i){ return renderPlayerMatchRow(i); }).join("")
+        : '<p class="loading-note">Nada pendiente.</p>')
+    + playerSection("Jugados", played.length, played.length
+        ? played.map(function(i){ return renderPlayerMatchRow(i); }).join("")
+        : '<p class="loading-note">Todavía no habéis jugado ningún partido.</p>')
+    + playerSection("Vuestros datos", null, renderPlayerContactSection(pair))
+    + '<button class="btn btn-ghost" style="margin-top:1.6rem;border-color:var(--border);color:var(--ink-faint);" data-action="player-logout" type="button">Cerrar sesión</button>'
     + '</div></div></div>';
 }
-function renderPlayerMatchRow(mySide, tipo, matchId, roundId, etiqueta, rival, sets, rev, schedule){
-  sets = sets || [];
-  var idBase = "pr-"+tipo+"-"+matchId;
-  var icsBtn = tipo === "liga" ? '<button class="ics-btn" data-action="add-to-calendar" data-id="'+matchId+'" type="button">'+calendarIconSvg()+' Calendario</button>' : "";
-  if (rev && rev.estado === "pendiente"){
-    return '<div class="bracket-edit-row"><div class="bracket-edit-teams">'+escHtml(etiqueta)+' · vs '+escHtml(rival)+'</div>'
-      + (schedule ? '<div class="match-meta">'+escHtml(schedule)+' '+icsBtn+'</div>' : "")
-      + '<span class="badge badge--pending">Enviado, pendiente de revisión</span></div>';
+/* one match card in the player panel. Unplayed: result entry (or why it can't be sent
+   yet). Played: the result as a read-only scoreboard, the share button, and a
+   "send a correction" toggle that reveals the same entry form prefilled. The input ids
+   (pr-<tipo>-<id>-s<n>me / riv) are what submitPlayerResult reads — only one form per
+   match is ever on screen, so reusing them between the two cases is safe. */
+function renderPlayerMatchRow(item){
+  var idBase = "pr-"+item.tipo+"-"+item.id;
+  var myVals = setsSideVals(item.sets, item.mySide);
+  var rivVals = setsSideVals(item.sets, item.mySide === "a" ? "b" : "a");
+  var rev = item.rev;
+  var pendingRev = !!(rev && rev.estado === "pendiente");
+  var rejected = !!(rev && rev.estado === "rechazada");
+  function entryForm(buttonLabel, withCancel){
+    return renderScoreGrid([
+        { label:"Vosotros", sub:item.myLabel, vals:myVals, ids:[1,2,3].map(function(n){ return idBase+"-s"+n+"me"; }) },
+        { label:"Rival", sub:item.rival, vals:rivVals, ids:[1,2,3].map(function(n){ return idBase+"-s"+n+"riv"; }) }
+      ])
+      + '<div class="bracket-edit-actions">'
+      +   '<button class="btn btn-primary btn-sm" data-action="submit-player-result" data-tipo="'+item.tipo+'" data-id="'+item.id+'" data-round="'+(item.roundId||"")+'" type="button">'+buttonLabel+'</button>'
+      +   (withCancel ? '<button class="btn btn-ghost btn-sm" data-action="player-correct-cancel" type="button">Cancelar</button>' : "")
+      + '</div>';
   }
-  var setsHtml = [1,2,3].map(function(n){
-    var s = sets[n-1] || {};
-    var meVal = s.a==null ? "" : (mySide==="a" ? s.a : s.b);
-    var rivVal = s.a==null ? "" : (mySide==="a" ? s.b : s.a);
-    return '<span class="bm-set-label">Set '+n+'</span>'
-      + '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="'+idBase+'-s'+n+'me" placeholder="Vos." value="'+meVal+'">'
-      + '<span class="bm-set-sep">–</span>'
-      + '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="'+idBase+'-s'+n+'riv" placeholder="Riv." value="'+rivVal+'">';
-  }).join("");
-  return '<div class="bracket-edit-row">'
-    + '<div class="bracket-edit-teams">'+escHtml(etiqueta)+' <span class="vs">vs</span> '+escHtml(rival)+'</div>'
-    + (schedule ? '<div class="match-meta">'+escHtml(schedule)+' '+icsBtn+'</div>' : "")
-    + (rev && rev.estado==="rechazada" ? '<p style="color:var(--danger);font-size:.8rem;margin-bottom:.5rem;">Vuestro envío anterior fue rechazado por el organizador — revisad el resultado y volved a enviarlo.</p>' : "")
-    + '<div class="bracket-edit-sets">'+setsHtml+'</div>'
-    + '<div class="bracket-edit-actions"><button class="btn btn-primary btn-sm" data-action="submit-player-result" data-tipo="'+tipo+'" data-id="'+matchId+'" data-round="'+(roundId||"")+'" type="button">Enviar resultado</button></div>'
-    + '</div>';
+  var metaParts = [];
+  if (item.schedule) metaParts.push(escHtml(item.schedule));
+  if (!item.played && item.fechaLimite) metaParts.push('<span class="deadline-tag">Fecha límite: '+escHtml(formatFechaLimite(item.fechaLimite))+'</span>');
+  var ics = (item.tipo === "liga" && item.fecha && !item.played) ? ' <button class="ics-btn" data-action="add-to-calendar" data-id="'+item.id+'" type="button">'+calendarIconSvg()+' Calendario</button>' : "";
+  var meta = (metaParts.length || ics) ? '<div class="match-meta">'+metaParts.join(" · ")+ics+'</div>' : "";
+  var share = item.played
+    ? '<button class="share-btn" data-action="share-result" data-tipo="'+item.tipo+'" data-id="'+item.id+'"'+(item.roundId ? ' data-round="'+item.roundId+'"' : "")+' type="button" aria-label="Compartir resultado" title="Compartir resultado">'+shareIconSvg()+'</button>'
+    : "";
+  var resultTag = item.played && item.decided ? '<span class="pm-result pm-result--'+(item.won ? "win" : "loss")+'">'+(item.won ? "Victoria" : "Derrota")+'</span>' : "";
+  var head = '<div class="pm-head"><div><div class="pm-etiqueta">'+escHtml(item.etiqueta)+'</div><div class="pm-vs">vs '+escHtml(item.rival)+'</div></div>'
+    + '<div class="pm-head-side">'+resultTag+share+'</div></div>';
+  var body;
+  if (!item.played){
+    if (pendingRev) body = '<span class="badge badge--pending">Resultado enviado · pendiente de revisión</span>';
+    else if (item.rivalTbd) body = '<p class="pm-note">El rival todavía está por definir: podréis enviar el resultado cuando se conozca.</p>';
+    else body = (rejected ? '<p class="pm-rejected">Vuestro envío anterior fue rechazado por el organizador — revisad el resultado y volved a enviarlo.</p>' : "")
+      + entryForm("Enviar resultado", false);
+  } else {
+    body = renderScoreGrid([
+        { label:"Vosotros", sub:item.myLabel, vals:myVals, winner:item.decided && item.won },
+        { label:"Rival", sub:item.rival, vals:rivVals, winner:item.decided && !item.won }
+      ], { readonly:true });
+    if (pendingRev) body += '<span class="badge badge--pending">Corrección enviada · pendiente de revisión</span>';
+    else if (ui.playerCorrecting === item.key) body += '<p class="pm-note">Corregid el resultado set a set; el organizador lo revisará antes de que cambie.</p>' + entryForm("Enviar corrección", true);
+    else body += (rejected ? '<p class="pm-rejected">Vuestra última corrección fue rechazada por el organizador.</p>' : "")
+      + '<button class="inline-link-btn" data-action="player-correct" data-key="'+item.key+'" type="button">¿Algún error en el resultado? Enviar corrección</button>';
+  }
+  return '<div class="pm-card'+(item.played ? " pm-card--played" : "")+'">' + head + meta + body + '</div>';
 }
 
 /* ---------- organizer ---------- */
@@ -1276,20 +1624,54 @@ function renderOrgSolicitudesTab(){
   }
   return subtabs + body;
 }
+/* which side of the real match ("a"/"b") the pair that sent this revisión played on.
+   sets[] in a revisión are stored against the match's own pairA/pairB order (so
+   acceptRevision can copy them straight across), so displaying them in the
+   "pairLabel vs rivalLabel" order needs this. Revisiones sent before mySide was stored
+   get it inferred from the match itself; null only if that match no longer exists. */
+function revisionSide(r){
+  if (r.mySide === "a" || r.mySide === "b") return r.mySide;
+  if (r.tipo === "liga"){
+    var m = STATE.matches.filter(function(x){ return x.id===r.matchId; })[0];
+    return m ? (m.pairA === r.pairId ? "a" : m.pairB === r.pairId ? "b" : null) : null;
+  }
+  var round = STATE.bracket.filter(function(x){ return x.id===r.roundId; })[0];
+  var bm = round ? round.matches.filter(function(x){ return x.id===r.matchId; })[0] : null;
+  if (!bm) return null;
+  var rp = pairById(r.pairId), byPair = rp ? bracketSideOfPair(bm, rp) : null;
+  return byPair || (bm.a === r.pairLabel ? "a" : bm.b === r.pairLabel ? "b" : null);
+}
 function renderOrgRevisionesTab(){
   if (!STATE.loaded.revisiones) return '<p class="loading-note">Cargando revisiones…</p>';
   var pending = STATE.revisiones.filter(function(r){ return r.estado==="pendiente"; })
     .sort(function(a,b){ return (a.creadoEnMs||0) - (b.creadoEnMs||0); });
   if (!pending.length) return '<p style="color:var(--ink-faint);font-size:.9rem;">No hay resultados enviados por jugadores pendientes de revisar.</p>';
   return '<div>' + pending.map(function(r){
-    var marcador = (r.sets||[]).map(function(s){ return s.a + "-" + s.b; }).join(", ");
-    var etiqueta = r.tipo === "liga" ? ("Liga · Jornada " + r.jornada) : "Cuadros";
+    var sets = r.sets || [];
+    var side = revisionSide(r);
+    var m = r.tipo === "liga" ? STATE.matches.filter(function(x){ return x.id===r.matchId; })[0] : null;
+    var etiqueta = r.tipo === "liga" ? ("Liga · Jornada " + (m ? m.jornada : r.jornada)) : "Cuadros";
+    var scoreHtml;
+    if (side){
+      var other = side === "a" ? "b" : "a";
+      var wonMine = setsWonBy(sets, side), wonTheirs = setsWonBy(sets, other);
+      scoreHtml = renderScoreGrid([
+          { label:r.pairLabel, sub:"envía el resultado", vals:setsSideVals(sets, side), winner:wonMine > wonTheirs },
+          { label:r.rivalLabel, vals:setsSideVals(sets, other), winner:wonTheirs > wonMine }
+        ], { readonly:true });
+      if (m && m.played && m.sets && m.sets.length){
+        scoreHtml += '<p class="pm-note">Ahora mismo figura: '+escHtml(m.sets.map(function(s){ return side === "a" ? s.a+"-"+s.b : s.b+"-"+s.a; }).join(", "))+' (mismo orden: '+escHtml(r.pairLabel)+' primero) — esto es una corrección.</p>';
+      }
+    } else {
+      scoreHtml = '<div style="font-family:var(--font-display);font-size:1.1rem;color:var(--signal);margin:.4rem 0;">'+escHtml(sets.map(function(s){ return s.a + "-" + s.b; }).join(", "))+'</div>'
+        + '<p class="pm-note">No se ha encontrado el partido original, así que este marcador va en el orden interno del partido (pareja A – pareja B), que puede no coincidir con el orden del texto de arriba.</p>';
+    }
     return '<div class="req-row" style="flex-direction:column;align-items:stretch;">'
       + '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:.5rem;align-items:center;">'
       +   '<span><strong>'+escHtml(r.pairLabel)+'</strong> vs '+escHtml(r.rivalLabel)+'</span>'
       +   '<span class="badge badge--pending">'+escHtml(etiqueta)+'</span>'
       + '</div>'
-      + '<div style="font-family:var(--font-display);font-size:1.1rem;color:var(--signal);margin:.4rem 0;">'+escHtml(marcador)+'</div>'
+      + scoreHtml
       + '<div style="display:flex;gap:.5rem;flex-wrap:wrap;">'
       +   '<button class="btn btn-outline btn-sm" data-action="accept-revision" data-id="'+r.id+'" type="button">Aceptar</button>'
       +   '<button class="btn btn-danger btn-sm" data-action="reject-revision" data-id="'+r.id+'" type="button">Rechazar</button>'
@@ -1298,10 +1680,16 @@ function renderOrgRevisionesTab(){
 }
 function renderOrgParejasTab(){
   var rows = STATE.pairs.map(function(p){
-    var pinInfo = "PIN de acceso: <strong>"+(p.pin?escHtml(p.pin):"sin generar")+"</strong>";
-    var canEmail = p.pin && isEmailContact(p.contacto);
-    return '<div class="org-row"><span class="grow"><strong>'+escHtml(p.j1)+' / '+escHtml(p.j2)+'</strong><small>'+escHtml(p.contacto||"sin contacto")+' · '+pinInfo+'</small></span>'
-      + '<button class="btn btn-outline btn-sm" data-action="regenerate-pin" data-id="'+p.id+'" type="button">'+(p.pin?"Nuevo PIN":"Generar PIN")+'</button>'
+    var pin = pairPin(p);
+    var pinInfo = "PIN de acceso: <strong>"+(pin ? escHtml(pin) : (STATE.loaded.pairPins ? "sin generar" : "no disponible (¿reglas de pairPins publicadas?)"))+"</strong>";
+    var contacto = pairContacto(p);
+    var editedByPair = !!STATE.pairContacts[p.id] && contacto !== (p.contacto || "");
+    var shown = pairDisplayLabel(p), renamed = shown !== pairOriginalLabel(p);
+    var canEmail = pin && isEmailContact(contacto);
+    return '<div class="org-row"><span class="grow"><strong>'+escHtml(shown)+'</strong>'
+      + (renamed ? '<small>(nombre cambiado por la pareja; antes: '+escHtml(pairOriginalLabel(p))+')</small>' : "")
+      + '<small>'+escHtml(contacto||"sin contacto")+(editedByPair ? ' (cambiado por la pareja; antes: '+escHtml(p.contacto||"vacío")+')' : "")+' · '+pinInfo+'</small></span>'
+      + '<button class="btn btn-outline btn-sm" data-action="regenerate-pin" data-id="'+p.id+'" type="button">'+(pin?"Nuevo PIN":"Generar PIN")+'</button>'
       + (canEmail ? '<button class="btn btn-outline btn-sm" data-action="resend-pin-email" data-id="'+p.id+'" type="button">Reenviar por email</button>' : "")
       + '<button class="btn btn-sm '+(p.confirmed?"btn-outline":"btn-ghost")+'" style="'+(p.confirmed?"":"border-color:var(--border);color:var(--ink-faint);")+'" data-action="toggle-confirmed" data-id="'+p.id+'" type="button">'+(p.confirmed?"Confirmada":"Marcar confirmada")+'</button>'
       + '<button class="btn btn-danger btn-sm" data-action="delete-pair" data-id="'+p.id+'" type="button">Eliminar</button></div>';
@@ -1314,14 +1702,62 @@ function renderOrgParejasTab(){
     +   '<button class="btn btn-primary btn-sm" data-action="add-pair" type="button">Añadir pareja</button>'
     + '</div></div>';
 }
+/* "dar más margen" without re-drawing the round robin: see planRecompact. Two steps —
+   pick a deadline, then an in-page confirmation listing exactly what changes — and
+   nothing is written until "Sí, recompactar". */
+function renderRecompactCard(){
+  var plan = planRecompact();
+  var playedCount = STATE.matches.filter(isMatchPlayed).length;
+  if (!ui.recompactConfirm){
+    return '<div class="recompact-card"><h4>Recompactar jornadas pendientes</h4>'
+      + '<p class="pm-note">Pasa cada partido sin jugar a la jornada siguiente a la última que jugó cada pareja (sin cambiar quién juega contra quién) y les pone una fecha límite. Los '+playedCount+' partido'+(playedCount===1?"":"s")+' ya jugado'+(playedCount===1?"":"s")+' no se tocan.</p>'
+      + (plan.length
+          ? '<div class="recompact-controls"><label class="field"><span>Fecha límite</span><input type="date" id="recompact-fecha" value="'+escHtml(ui.recompactFecha || defaultFechaLimite())+'"></label>'
+            + '<button class="btn btn-outline btn-sm" data-action="ask-recompact" type="button">Revisar cambios ('+plan.length+' partido'+(plan.length===1?"":"s")+')</button></div>'
+            + (ui.recompactError ? '<p class="login-error">'+escHtml(ui.recompactError)+'</p>' : "")
+          : '<p class="pm-note">No hay partidos sin jugar.</p>')
+      + '</div>';
+  }
+  var changed = plan.filter(function(p){ return p.to !== p.from; });
+  var rows = plan.map(function(p){
+    var m = p.match;
+    var hadSchedule = !!(m.fecha || m.hora || m.pista);
+    return '<li><strong>'+escHtml(pairLabel(m.pairA))+'</strong> vs <strong>'+escHtml(pairLabel(m.pairB))+'</strong>: '
+      + (p.to !== p.from
+          ? 'Jornada '+p.from+' → <strong>Jornada '+p.to+'</strong>'+(hadSchedule ? ' <span class="deadline-tag">(se quita su cita: '+escHtml(matchScheduleText(m))+')</span>' : "")
+          : 'se queda en la Jornada '+p.from)
+      + '</li>';
+  }).join("");
+  return '<div class="recompact-card recompact-card--confirm"><h4>¿Recompactar?</h4>'
+    + '<p class="pm-note">Se van a actualizar <strong>'+plan.length+'</strong> partido'+(plan.length===1?"":"s")+' sin jugar ('+changed.length+' cambia'+(changed.length===1?"":"n")+' de jornada). Fecha límite para todos: <strong>'+escHtml(formatFechaLimite(ui.recompactFecha))+'</strong>. Los '+playedCount+' partido'+(playedCount===1?"":"s")+' ya jugado'+(playedCount===1?"":"s")+' no se tocan.</p>'
+    + '<ul class="recompact-list">'+rows+'</ul>'
+    + '<div class="inline-confirm" style="margin-top:.8rem;">'
+    +   '<button class="btn btn-danger btn-sm" data-action="confirm-recompact" type="button">Sí, recompactar</button>'
+    +   '<button class="btn btn-ghost btn-sm" data-action="cancel-recompact" type="button">Cancelar</button>'
+    + '</div></div>';
+}
 function renderOrgLigaTab(){
   var confirmedPairs = STATE.pairs.filter(function(p){ return p.confirmed; });
+  var playedCount = STATE.matches.filter(isMatchPlayed).length;
+  var fixtureButtons;
+  if (ui.fixtureConfirm === "generate"){
+    fixtureButtons = '<div class="inline-confirm"><span>¿Seguro? Regenerar vuelve a sortear el calendario entero desde cero: se perderán los '+playedCount+' resultado'+(playedCount===1?"":"s")+' ya introducido'+(playedCount===1?"":"s")+' y todas las fechas. Si solo quieres dar más margen a los partidos pendientes, usa «Recompactar jornadas pendientes» más abajo.</span>'
+      + '<button class="btn btn-danger btn-sm" data-action="confirm-generate-fixture" type="button">Sí, regenerar</button>'
+      + '<button class="btn btn-ghost btn-sm" data-action="cancel-fixture-confirm" type="button">Cancelar</button></div>';
+  } else if (ui.fixtureConfirm === "clear"){
+    fixtureButtons = '<div class="inline-confirm"><span>¿Seguro? Esto borra el calendario de liga entero, incluidos los '+playedCount+' resultado'+(playedCount===1?"":"s")+' ya introducido'+(playedCount===1?"":"s")+'.</span>'
+      + '<button class="btn btn-danger btn-sm" data-action="confirm-clear-fixture" type="button">Sí, vaciar</button>'
+      + '<button class="btn btn-ghost btn-sm" data-action="cancel-fixture-confirm" type="button">Cancelar</button></div>';
+  } else {
+    fixtureButtons = '<div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.7rem;">'
+      +   '<button class="btn btn-outline btn-sm" data-action="generate-fixture" type="button">'+(STATE.matches.length?"Regenerar calendario":"Generar calendario de liga")+'</button>'
+      +   (STATE.matches.length ? '<button class="btn btn-danger btn-sm" data-action="clear-fixture" type="button">Vaciar calendario</button>' : "")
+      + '</div>';
+  }
   var head = '<p style="color:var(--ink-soft);font-size:.9rem;">'+confirmedPairs.length+' pareja'+(confirmedPairs.length===1?"":"s")+' confirmada'+(confirmedPairs.length===1?"":"s")+'.</p>'
-    + '<div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.7rem;">'
-    +   '<button class="btn btn-outline btn-sm" data-action="generate-fixture" type="button">'+(STATE.matches.length?"Regenerar calendario":"Generar calendario de liga")+'</button>'
-    +   (STATE.matches.length ? '<button class="btn btn-danger btn-sm" data-action="clear-fixture" type="button">Vaciar calendario</button>' : "")
-    + '</div>'
-    + '<p style="color:var(--ink-faint);font-size:.82rem;margin-top:.8rem;">Rellena el resultado set a set: el marcador y los sets ganados de cada pareja se calculan solos. Regenerar crea un calendario nuevo con las parejas confirmadas actuales; vaciar borra el calendario entero.</p>';
+    + fixtureButtons
+    + '<p style="color:var(--ink-faint);font-size:.82rem;margin-top:.8rem;">Rellena el resultado set a set: el marcador y los sets ganados de cada pareja se calculan solos. Regenerar crea un calendario nuevo con las parejas confirmadas actuales; vaciar borra el calendario entero.</p>'
+    + (STATE.matches.length ? renderRecompactCard() : "");
   if (!STATE.matches.length) return '<div>' + head + '</div>';
   var byJ = {};
   STATE.matches.filter(matchPairsExist).forEach(function(m){ (byJ[m.jornada]=byJ[m.jornada]||[]).push(m); });
@@ -1333,21 +1769,19 @@ function renderOrgLigaTab(){
     return '<div style="margin-top:1rem;"><h4 style="font-family:var(--font-mono);font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint);margin-bottom:.5rem;">Jornada '+j+'</h4>'
       + byJ[j].map(function(m){
           var sets = m.sets || [];
-          var setsHtml = [1,2,3].map(function(n){
-            var s = sets[n-1] || {};
-            return '<span class="bm-set-label">Set '+n+'</span>'
-              + '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="match-s'+n+'a-'+m.id+'" placeholder="A" value="'+(s.a!=null?s.a:"")+'">'
-              + '<span class="bm-set-sep">–</span>'
-              + '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="match-s'+n+'b-'+m.id+'" placeholder="B" value="'+(s.b!=null?s.b:"")+'">';
-          }).join("");
+          var setsHtml = renderScoreGrid([
+            { label:pairLabel(m.pairA), vals:setsSideVals(sets, "a"), ids:[1,2,3].map(function(n){ return "match-s"+n+"a-"+m.id; }) },
+            { label:pairLabel(m.pairB), vals:setsSideVals(sets, "b"), ids:[1,2,3].map(function(n){ return "match-s"+n+"b-"+m.id; }) }
+          ]);
           return '<div class="bracket-edit-row">'
             + '<div class="bracket-edit-teams">'+escHtml(pairLabel(m.pairA))+' <span class="vs">vs</span> '+escHtml(pairLabel(m.pairB))+'</div>'
             + '<div class="bracket-edit-schedule">'
             +   '<label class="field"><span>Fecha</span><input type="date" id="match-fecha-'+m.id+'" value="'+(m.fecha||"")+'"></label>'
             +   '<label class="field"><span>Hora</span><input type="time" id="match-hora-'+m.id+'" value="'+(m.hora||"")+'"></label>'
             +   '<label class="field"><span>Pista</span><input type="text" id="match-pista-'+m.id+'" value="'+escHtml(m.pista||"")+'" placeholder="Pista 2"></label>'
+            +   (m.played ? "" : '<label class="field"><span>Fecha límite</span><input type="date" id="match-fechalimite-'+m.id+'" value="'+escHtml(m.fechaLimite||"")+'"></label>')
             + '</div>'
-            + '<div class="bracket-edit-sets">'+setsHtml+'</div>'
+            + setsHtml
             + '<div class="bracket-edit-actions">'
             +   '<button class="btn btn-primary btn-sm" data-action="save-match" data-id="'+m.id+'" type="button">Guardar</button>'
             + '</div></div>';
@@ -1355,6 +1789,15 @@ function renderOrgLigaTab(){
       + '</div>';
   }).join("");
   return '<div>' + head + list + '</div>';
+}
+/* cuadros sides the id migration couldn't tie to exactly one pair — they keep counting
+   for the ranking by name, exactly as before; listed so the organizer can check them */
+function renderUnresolvedSidesNote(){
+  var list = planIdMigration().unresolved;
+  if (!list.length) return "";
+  return '<details class="unresolved-note"><summary>'+list.length+' lado'+(list.length===1?"":"s")+' de cuadros sin vincular a una pareja (cuentan para el ranking por nombre, como siempre)</summary><ul>'
+    + list.map(function(u){ return '<li><strong>'+escHtml(u.texto)+'</strong> — '+escHtml(u.torneo)+' · '+escHtml(u.ronda)+' <span class="pm-note">('+escHtml(u.motivo)+')</span></li>'; }).join("")
+    + '</ul></details>';
 }
 function renderOrgCuadrosTab(){
   var torneoOptions = distinctTorneos();
@@ -1371,19 +1814,16 @@ function renderOrgCuadrosTab(){
           '<option value="'+escHtml(m.a)+'"'+(m.ganador===m.a?" selected":"")+'>'+escHtml(m.a)+'</option>',
           '<option value="'+escHtml(m.b)+'"'+(m.ganador===m.b?" selected":"")+'>'+escHtml(m.b)+'</option>'].join("");
         var sets = m.sets || [];
-        var setsHtml = [1,2,3].map(function(n){
-          var s = sets[n-1] || {};
-          return '<span class="bm-set-label">Set '+n+'</span>'
-            + '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="bm-'+m.id+'-s'+n+'a" placeholder="A" value="'+(s.a!=null?s.a:"")+'">'
-            + '<span class="bm-set-sep">–</span>'
-            + '<input class="bm-set-input" type="text" inputmode="numeric" maxlength="2" id="bm-'+m.id+'-s'+n+'b" placeholder="B" value="'+(s.b!=null?s.b:"")+'">';
-        }).join("");
+        var setsHtml = renderScoreGrid([
+          { label:bracketSideDisplay(m, "a"), sub:"Pareja A", vals:setsSideVals(sets, "a"), ids:[1,2,3].map(function(n){ return "bm-"+m.id+"-s"+n+"a"; }) },
+          { label:bracketSideDisplay(m, "b"), sub:"Pareja B", vals:setsSideVals(sets, "b"), ids:[1,2,3].map(function(n){ return "bm-"+m.id+"-s"+n+"b"; }) }
+        ]);
         return '<div class="bracket-edit-row">'
           + '<div class="bracket-edit-names">'
           +   '<div class="bracket-edit-side">'+bracketEditSideFields(m,"a","Pareja A")+'</div>'
           +   '<div class="bracket-edit-side">'+bracketEditSideFields(m,"b","Pareja B")+'</div>'
           + '</div>'
-          + '<div class="bracket-edit-sets">'+setsHtml+'</div>'
+          + setsHtml
           + '<div class="bracket-edit-actions">'
           +   '<select id="bm-ganador-'+m.id+'">'+options+'</select>'
           +   '<button class="btn btn-primary btn-sm" data-action="save-bracket-match" data-round="'+r.id+'" data-id="'+m.id+'" type="button">Guardar</button>'
@@ -1414,7 +1854,7 @@ function renderOrgCuadrosTab(){
       + '<div class="field" style="max-width:260px;margin-bottom:.7rem;"><span>Torneo del cuadro generado</span><input id="new-bracket-torneo" type="text" list="torneo-list" value="'+escHtml(defaultTorneo)+'"></div>'
       + '<button class="btn btn-outline btn-sm" style="margin-bottom:1.4rem;" data-action="generate-bracket-from-standings" type="button">Generar cuadro desde la liga ('+seedN+' parejas)</button>'
     : '<p style="color:var(--ink-faint);font-size:.9rem;margin-bottom:1.4rem;">Necesitas al menos 2 parejas confirmadas para poder generar un cuadro desde la clasificación.</p>';
-  return '<div>' + torneoDatalist + seedHead + (groups || '<p style="color:var(--ink-faint);font-size:.9rem;">Todavía no hay rondas.</p>')
+  return '<div>' + torneoDatalist + seedHead + renderUnresolvedSidesNote() + (groups || '<p style="color:var(--ink-faint);font-size:.9rem;">Todavía no hay rondas.</p>')
     + '<div class="org-inline-form">'
     +   '<div class="field"><span>Nueva ronda</span><input id="new-round-name" type="text" placeholder="Ej. Cuartos de final"></div>'
     +   '<div class="field"><span>Torneo</span><input id="new-round-torneo" type="text" list="torneo-list" value="'+escHtml(defaultTorneo)+'"></div>'
@@ -1570,8 +2010,8 @@ function renderKioskView(){
     ? '<div class="bracket'+(visibleRounds.length>1?" bracket--tree":"")+'">' + visibleRounds.map(function(r){
         return '<div class="bracket-round"><h3>'+escHtml(r.name)+'</h3>' + r.matches.map(function(m){
           return '<div class="bracket-match fx-reveal">'
-            + '<div class="'+(m.ganador && m.ganador===m.a ? "winner":"")+'">'+escHtml(m.a)+'</div>'
-            + '<div class="'+(m.ganador && m.ganador===m.b ? "winner":"")+'">'+escHtml(m.b)+'</div>'
+            + '<div class="'+(m.ganador && m.ganador===m.a ? "winner":"")+'">'+escHtml(bracketSideDisplay(m, "a"))+'</div>'
+            + '<div class="'+(m.ganador && m.ganador===m.b ? "winner":"")+'">'+escHtml(bracketSideDisplay(m, "b"))+'</div>'
             + (m.resultado ? '<div class="bracket-score">'+escHtml(m.resultado)+'</div>' : "")
             + '</div>';
         }).join("") + '</div>';
@@ -2009,14 +2449,14 @@ function isEmailContact(v){
    (never rejects) whenever it can't send — EmailJS isn't configured, the contact isn't
    an email, or the request itself fails — so a caller can just show a fallback message
    ("compártelo a mano") rather than needing its own try/catch. */
-function sendPinEmail(pair){
-  if (!window.emailjs || !EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !isEmailContact(pair.contacto) || !pair.pin){
+function sendPinEmail(pair, pin){
+  if (!window.emailjs || !EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !isEmailContact(pairContacto(pair)) || !pin){
     return Promise.resolve(false);
   }
   return emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-    to_email: pair.contacto.trim(),
-    pair_name: pair.j1 + " / " + pair.j2,
-    pin: pair.pin
+    to_email: pairContacto(pair).trim(),
+    pair_name: pairDisplayLabel(pair),
+    pin: pin
   }).then(function(){ trackEmailSend(); return true; }).catch(function(){ return false; });
 }
 /* see the state/emailUsage onSnapshot listener for why this only ever sees admin-
@@ -2088,7 +2528,12 @@ function relock(){ signOut(auth); ui.modalOpen = false; ui.faqDeleteConfirm = nu
    used to stamp a result submission with a uid (see submitPlayerResult); which pair is
    "logged in" (ui.playerPairId) comes purely from the PIN check in tryPlayerAccess. */
 var currentPlayerAuthUser = null;
-function openPlayerModal(){ ui.playerModalOpen = true; ui.playerAuthError = ""; ui.playerSubmitMsg = ""; mount(); }
+function resetPlayerPanelState(){
+  ui.playerSubmitMsg = ""; ui.playerCorrecting = null;
+  ui.playerContactDraft = null; ui.playerName1Draft = null; ui.playerName2Draft = null;
+  ui.playerContactMsg = ""; ui.playerContactError = ""; ui.playerContactBusy = false;
+}
+function openPlayerModal(){ ui.playerModalOpen = true; ui.playerAuthError = ""; resetPlayerPanelState(); mount(); }
 function closePlayerModal(){ ui.playerModalOpen = false; mount(); }
 
 /* ---------- camiseta vote (temporary — see the "Camisetas" organizer tab) ----------
@@ -2277,7 +2722,11 @@ function deleteCamiseta(id){
 function openPlayerProfile(slug){
   if (!slug) return;
   ui.profileSlug = slug;
-  history.pushState({ profileSlug:slug }, "", "#jugador/"+slug);
+  /* the link shows the player's current name (readable, shareable); findRankingRow maps
+     it back to the same player even after a later rename */
+  var row = findRankingRow(computePlayerRanking(), slug);
+  var urlPart = (row && row.nameSlug) || slug;
+  history.pushState({ profileSlug:slug }, "", "#jugador/"+urlPart);
   mount();
 }
 function closePlayerProfile(){
@@ -2285,31 +2734,100 @@ function closePlayerProfile(){
   if (location.hash.indexOf("#jugador/") === 0) history.pushState({}, "", location.pathname + location.search);
   mount();
 }
-/* the only gate to a pair's own screen: match the PIN against STATE.pairs, then sign
-   in anonymously (or reuse the anonymous session the camiseta vote may have already
-   created for this browser — see ensureAnonAuth) purely so submitPlayerResult has a uid
-   to stamp a submission with. Either player can use the same PIN, on any device. */
+/* the only gate to a pair's own screen. The browser never sees anyone's PIN: it signs
+   in anonymously (or reuses the session the camiseta vote may already have — see
+   ensureAnonAuth) and writes playerSessions/{uid} = {pairId, pin}. The security rules
+   accept that write only when the PIN equals pairPins/{pairId}.pin (organizer-only, not
+   readable by anyone else), so "the write went through" IS the PIN check. Every later
+   player write (pairContacts, revisiones) is accepted only from a uid whose session
+   names that pair AND still carries its current PIN — a new PIN from the organizer
+   ends every old session of that pair. */
 function tryPlayerAccess(){
-  var pin = valOf("player-access-pin");
-  if (!pin){ ui.playerAuthError = "Escribe el PIN de vuestra pareja."; mount(); return; }
-  var pair = STATE.pairs.filter(function(p){ return p.pin && p.pin === pin; })[0];
-  if (!pair){ ui.playerAuthError = "Ese PIN no corresponde a ninguna pareja."; mount(); return; }
+  var pairId = valOf("player-access-pair"), pin = valOf("player-access-pin");
+  ui.playerAccessPairDraft = pairId || null;
+  if (!pairId){ ui.playerAuthError = "Elige vuestra pareja."; mount(); return; }
+  if (!/^\d{4}$/.test(pin)){ ui.playerAuthError = "El PIN son 4 cifras."; mount(); return; }
+  if (ui.unlocked){ ui.playerAuthError = "Ahora mismo tienes abierta la sesión de organizador: ciérrala para entrar como jugador."; mount(); return; }
+  if (!pairById(pairId)){ ui.playerAuthError = "Esa pareja ya no existe."; mount(); return; }
   ui.playerAuthBusy = true; ui.playerAuthError = ""; mount();
-  ensureAnonAuth().then(function(){
+  ensureAnonAuth().then(function(user){
+    return setDoc(doc(db, "playerSessions", user.uid), { pairId: pairId, pin: pin, creadoEn: serverTimestamp() });
+  }).then(function(){
     ui.playerAuthBusy = false;
-    ui.playerPairId = pair.id;
-    try { localStorage.setItem("eightPlayerPairId", pair.id); } catch(e){}
+    ui.playerPairId = pairId;
+    try { localStorage.setItem("eightPlayerPairId", pairId); } catch(e){}
     mount();
-  }).catch(function(){
+  }).catch(function(err){
     ui.playerAuthBusy = false;
-    ui.playerAuthError = "No se pudo entrar. Comprueba tu conexión e inténtalo de nuevo.";
+    ui.playerAuthError = err && err.code === "permission-denied"
+      ? "Ese PIN no es el de esa pareja. Revisad los dos datos."
+      : "No se pudo entrar. Comprueba tu conexión e inténtalo de nuevo.";
     mount();
   });
 }
+/* also deletes this browser's session doc, so the uid stops counting as that pair */
 function playerLogout(){
+  var u = currentPlayerAuthUser;
+  if (u && ui.playerPairId) deleteDoc(doc(db, "playerSessions", u.uid)).catch(function(){});
   ui.playerPairId = null;
+  resetPlayerPanelState();
   try { localStorage.removeItem("eightPlayerPairId"); } catch(e){}
   mount();
+}
+/* a remembered login (localStorage) only stands if this browser's uid still has a session
+   doc for that pair — otherwise (never had one, logged out elsewhere, rules changed) it's
+   dropped and the player just logs in again. A session whose PIN was later changed by
+   the organizer still reads fine here but every write is refused; see sessionExpired. */
+function verifyStoredPlayerSession(user){
+  if (!ui.playerPairId || !user || user.email === ADMIN_EMAIL) return;
+  var expected = ui.playerPairId;
+  getDoc(doc(db, "playerSessions", user.uid)).then(function(snap){
+    if (ui.playerPairId !== expected) return;
+    if (!snap.exists() || snap.data().pairId !== expected) dropPlayerLogin("");
+  }).catch(function(){ if (ui.playerPairId === expected) dropPlayerLogin(""); });
+}
+function dropPlayerLogin(msg){
+  ui.playerPairId = null;
+  resetPlayerPanelState();
+  ui.playerAuthError = msg;
+  try { localStorage.removeItem("eightPlayerPairId"); } catch(e){}
+  mount();
+}
+var SESSION_EXPIRED_MSG = "Vuestra sesión ya no es válida (puede que el organizador haya cambiado vuestro PIN). Volved a entrar con el PIN actual.";
+function startPlayerCorrection(key){ ui.playerCorrecting = key; ui.playerSubmitMsg = ""; mount(); }
+function cancelPlayerCorrection(){ ui.playerCorrecting = null; mount(); }
+/* writes only pairContacts/{pairId} (display names j1/j2 + contacto, see pairPlayerName
+   and pairContacto) — never state/pairs, so the pair's original names and confirmation,
+   and every other pair, can't be touched from here. merge:true so a field this save
+   doesn't send is kept, never dropped. No PIN in the payload (that doc is public): the
+   rule accepts it because this uid has a live session for this pair (tryPlayerAccess). */
+function validPlayerName(v){ return v.length > 0 && v.length <= 60 && v.indexOf("/") === -1; }
+function savePlayerContact(){
+  var pair = ui.playerPairId ? pairById(ui.playerPairId) : null;
+  if (!pair) return;
+  var n1 = valOf("player-j1"), n2 = valOf("player-j2"), mail = valOf("player-contacto");
+  ui.playerName1Draft = n1; ui.playerName2Draft = n2; ui.playerContactDraft = mail; ui.playerContactMsg = "";
+  if (!validPlayerName(n1) || !validPlayerName(n2)){ ui.playerContactError = "Escribid el nombre de los dos jugadores (máx. 60 caracteres, sin «/»)."; mount(); return; }
+  var mailChanged = mail !== pairContacto(pair);
+  if (mailChanged && !isEmailContact(mail)){ ui.playerContactError = "Ese email no parece válido. Revísalo."; mount(); return; }
+  var namesChanged = n1 !== pairPlayerName(pair, 1) || n2 !== pairPlayerName(pair, 2);
+  if (!mailChanged && !namesChanged){ ui.playerContactError = ""; ui.playerContactMsg = "No hay nada que cambiar."; mount(); return; }
+  var payload = { actualizadoEn: serverTimestamp() };
+  if (namesChanged){ payload.j1 = n1; payload.j2 = n2; }
+  if (mailChanged) payload.contacto = mail;
+  ui.playerContactError = ""; ui.playerContactBusy = true; mount();
+  ensureAnonAuth().then(function(){
+    return setDoc(doc(db, "pairContacts", pair.id), payload, { merge: true });
+  }).then(function(){
+    ui.playerContactBusy = false; ui.playerContactDraft = null; ui.playerName1Draft = null; ui.playerName2Draft = null;
+    ui.playerContactMsg = (namesChanged && mailChanged) ? "Nombres y email actualizados ✓" : namesChanged ? "Nombres actualizados ✓" : "Email actualizado ✓";
+    mount();
+  }).catch(function(err){
+    ui.playerContactBusy = false;
+    if (err && err.code === "permission-denied"){ dropPlayerLogin(SESSION_EXPIRED_MSG); return; }
+    ui.playerContactError = "No se pudo guardar (" + (err && err.code || "error") + "). Inténtalo de nuevo o avisa al organizador.";
+    mount();
+  });
 }
 function submitPlayerResult(tipo, matchId, roundId){
   var pair = ui.playerPairId ? pairById(ui.playerPairId) : null;
@@ -2320,7 +2838,7 @@ function submitPlayerResult(tipo, matchId, roundId){
     alert("Espera " + Math.ceil((RATE_LIMIT_SECONDS * 1000 - msSinceLast) / 1000) + " segundos antes de enviar otro resultado.");
     return;
   }
-  var label = pair.j1 + " / " + pair.j2;
+  var label = pairDisplayLabel(pair);
   var mySide, rivalLabel, jornada = null, m;
   if (tipo === "liga"){
     m = STATE.matches.filter(function(x){ return x.id===matchId; })[0];
@@ -2332,8 +2850,8 @@ function submitPlayerResult(tipo, matchId, roundId){
     var round = STATE.bracket.filter(function(r){ return r.id===roundId; })[0];
     m = round ? round.matches.filter(function(x){ return x.id===matchId; })[0] : null;
     if (!m){ alert("No se encontró el partido."); return; }
-    mySide = m.a === label ? "a" : "b";
-    rivalLabel = mySide==="a" ? m.b : m.a;
+    mySide = bracketSideOfPair(m, pair) || "a";
+    rivalLabel = bracketSideDisplay(m, mySide === "a" ? "b" : "a");
   }
   var idBase = "pr-"+tipo+"-"+matchId;
   var sets = [];
@@ -2355,17 +2873,18 @@ function submitPlayerResult(tipo, matchId, roundId){
   var batch = writeBatch(db);
   batch.set(revRef, {
     tipo: tipo, matchId: matchId, roundId: roundId || null, jornada: jornada,
-    pairId: pair.id, pairLabel: label, rivalLabel: rivalLabel,
+    pairId: pair.id, pairLabel: label, rivalLabel: rivalLabel, mySide: mySide,
     sets: sets, estado: "pendiente", uid: currentPlayerAuthUser.uid, creadoEn: serverTimestamp()
   });
   batch.set(doc(db, "rateLimits", currentPlayerAuthUser.uid), { lastAt: serverTimestamp() });
   batch.commit().then(function(){
     ui.lastRevisionSubmitAt = Date.now();
+    ui.playerCorrecting = null;
     ui.playerSubmitMsg = "Resultado enviado. El organizador lo revisará pronto.";
     mount();
   }).catch(function(err){
     alert(err && err.code === "permission-denied"
-      ? "Estás enviando resultados demasiado rápido. Espera un momento e inténtalo de nuevo."
+      ? "No se pudo enviar: o estás enviando resultados demasiado rápido (espera unos segundos), o vuestra sesión ya no es válida (si el organizador ha cambiado vuestro PIN, sal y vuelve a entrar)."
       : "No se pudo enviar. Comprueba tu conexión e inténtalo de nuevo.");
     if (btn){ btn.disabled = false; btn.textContent = "Enviar resultado"; }
   });
@@ -2389,7 +2908,8 @@ function getShareInfo(tipo, id, roundId){
     var round = STATE.bracket.filter(function(r){ return r.id === roundId; })[0];
     var m2 = round && round.matches.filter(function(x){ return x.id === id; })[0];
     if (!m2 || !m2.resultado) return null;
-    return { context: roundTorneo(round) + " · " + round.name, labelA: m2.a, labelB: m2.b, scoreText: m2.resultado, winner: m2.ganador || null };
+    return { context: roundTorneo(round) + " · " + round.name, labelA: bracketSideDisplay(m2, "a"), labelB: bracketSideDisplay(m2, "b"), scoreText: m2.resultado,
+      winner: m2.ganador ? bracketSideDisplay(m2, m2.ganador === m2.a ? "a" : "b") : null };
   }
   return null;
 }
@@ -2564,7 +3084,7 @@ function acceptRevision(id){
     m.setsA = r.sets.filter(function(s){ return s.a > s.b; }).length;
     m.setsB = r.sets.filter(function(s){ return s.b > s.a; }).length;
     m.played = true;
-    if (beforeRows) announceRankingChange(beforeRows, [pairById(m.pairA).j1, pairById(m.pairA).j2, pairById(m.pairB).j1, pairById(m.pairB).j2]);
+    if (beforeRows) announceRankingChange(beforeRows, ligaMatchPlayerKeys(m));
     saveStateDoc("matches", { list: STATE.matches });
   } else {
     var round = STATE.bracket.filter(function(x){ return x.id===r.roundId; })[0];
@@ -2584,26 +3104,63 @@ function acceptRevision(id){
 function rejectRevision(id){
   updateDoc(doc(db, "revisiones", id), { estado: "rechazada" });
 }
+/* a pair's PIN lives ONLY in pairPins/{pairId} (organizer-only read/write) — the public
+   state/pairs list doesn't carry it (older pairs did; runAdminMigrations moves it out
+   once the copy is verified). p.pin is just the fallback for a pair not migrated yet. */
+function pairPin(p){ return (p && (STATE.pairPins[p.id] || p.pin)) || ""; }
+/* the ONE place a PIN is ever written: the pairs list and pairPins/{pairId} go out in a
+   single atomic batch — both or neither. `pins` is [{id, pin}]; any of those pairs that
+   still had a legacy pin in the list loses it in the same batch (its new PIN is in
+   pairPins by then). Built from a new list rather than mutating STATE.pairs first, so a
+   failed write leaves nothing half-applied locally. `extra(batch)` lets a caller add its
+   own writes to the same batch. */
+function commitPairsWithPins(list, pins, extra){
+  var pinById = {};
+  pins.forEach(function(x){ pinById[x.id] = x.pin; });
+  var clean = list.map(function(p){
+    if (!(p.id in pinById) || !("pin" in p)) return p;
+    var c = Object.assign({}, p); delete c.pin; return c;
+  });
+  var batch = writeBatch(db);
+  batch.set(doc(db, "state", "pairs"), { list: clean });
+  pins.forEach(function(x){ batch.set(doc(db, "pairPins", x.id), { pin: x.pin }); });
+  if (extra) extra(batch);
+  return batch.commit().then(function(){
+    STATE.pairs = clean;
+    pins.forEach(function(x){ STATE.pairPins[x.id] = x.pin; });
+  });
+}
+function newPin(){ return String(Math.floor(1000 + Math.random() * 9000)); }
+/* a brand-new pair (no PIN in it — see pairPin) with stable player ids from the start */
+function newPairRecord(j1, j2, contacto){
+  var j1Id = playerIdForNewName(j1);
+  var j2Id = slugifyName(j2) && slugifyName(j2) === slugifyName(j1) ? j1Id : playerIdForNewName(j2);
+  return { id: uid("p"), j1:j1, j2:j2, contacto:contacto, confirmed:true, j1Id:j1Id, j2Id:j2Id };
+}
+function pinSaveError(err){
+  setSaveResult(false, "No se pudo guardar (" + (err && err.code || "error") + "). No se ha cambiado nada — comprueba la conexión (y que las reglas de Firestore con pairPins estén publicadas).");
+}
 function regeneratePin(id){
-  var p = pairById(id);
-  if (!p) return;
-  p.pin = String(Math.floor(1000 + Math.random() * 9000));
-  saveStateDoc("pairs", { list: STATE.pairs }).then(function(){
-    if (!isEmailContact(p.contacto)) return;
-    return sendPinEmail(p).then(function(sent){
+  var old = pairById(id);
+  if (!old) return;
+  var p = old, pin = newPin();
+  setSaving("Guardando…");
+  commitPairsWithPins(STATE.pairs, [{ id: id, pin: pin }]).then(function(){
+    if (!isEmailContact(pairContacto(p))){ setSaveResult(true, "PIN generado ✓ — ya puedes compartirlo con la pareja."); return; }
+    return sendPinEmail(p, pin).then(function(sent){
       setSaveResult(sent, sent
-        ? "PIN generado y enviado por email a " + p.contacto + " ✓ — avísales de que puede caer en spam la primera vez."
+        ? "PIN generado y enviado por email a " + pairContacto(p) + " ✓ — avísales de que puede caer en spam la primera vez."
         : "PIN generado, pero no se pudo enviar el email — compártelo a mano.");
     });
-  });
+  }).catch(pinSaveError);
 }
 function resendPinEmail(id){
   var p = pairById(id);
-  if (!p || !p.pin) return;
+  if (!p || !pairPin(p)) return;
   setSaving("Enviando email…");
-  sendPinEmail(p).then(function(sent){
+  sendPinEmail(p, pairPin(p)).then(function(sent){
     setSaveResult(sent, sent
-      ? "PIN reenviado por email a " + p.contacto + " ✓ — avísales de que puede caer en spam la primera vez."
+      ? "PIN reenviado por email a " + pairContacto(p) + " ✓ — avísales de que puede caer en spam la primera vez."
       : "No se pudo enviar el email. Comprueba tu configuración de EmailJS e inténtalo de nuevo.");
   });
 }
@@ -2617,7 +3174,7 @@ function tryLogin(){
     ui.loginError = true;
   }).finally(function(){ mount(); });
 }
-function setTab(tab){ ui.tab = tab; ui.faqDeleteConfirm = null; mount(); }
+function setTab(tab){ ui.tab = tab; ui.faqDeleteConfirm = null; ui.fixtureConfirm = null; ui.recompactConfirm = false; ui.recompactError = ""; mount(); }
 function setSolicitudesSubtab(tab){ ui.solicitudesSubtab = tab; ui.clearHistoryConfirm = false; mount(); }
 function toggleMobileMenu(){ ui.mobileMenuOpen = !ui.mobileMenuOpen; mount(); }
 function closeMobileMenu(){ ui.mobileMenuOpen = false; mount(); }
@@ -2638,16 +3195,16 @@ function saveStateDoc(name, data){
 function addPair(){
   var j1 = valOf("new-pair-j1"), j2 = valOf("new-pair-j2"), contacto = valOf("new-pair-contacto");
   if (!j1 || !j2){ alert("Escribe los nombres de los dos jugadores."); return; }
-  var p = { id: uid("p"), j1:j1, j2:j2, contacto:contacto, confirmed:true, pin: String(Math.floor(1000 + Math.random() * 9000)) };
-  STATE.pairs.push(p);
-  saveStateDoc("pairs", { list: STATE.pairs }).then(function(){
-    if (!isEmailContact(p.contacto)) return;
-    return sendPinEmail(p).then(function(sent){
+  var p = newPairRecord(j1, j2, contacto), pin = newPin();
+  setSaving("Guardando…");
+  commitPairsWithPins(STATE.pairs.concat([p]), [{ id: p.id, pin: pin }]).then(function(){
+    if (!isEmailContact(pairContacto(p))){ setSaveResult(true, "Pareja añadida ✓ — PIN: " + pin); return; }
+    return sendPinEmail(p, pin).then(function(sent){
       setSaveResult(sent, sent
-        ? "Pareja añadida y PIN enviado por email a " + p.contacto + " ✓ — avísales de que puede caer en spam la primera vez."
+        ? "Pareja añadida y PIN enviado por email a " + pairContacto(p) + " ✓ — avísales de que puede caer en spam la primera vez."
         : "Pareja añadida, pero no se pudo enviar el email — comparte el PIN a mano.");
     });
-  });
+  }).catch(pinSaveError);
 }
 function deletePair(id){
   if (!confirm("¿Eliminar esta pareja?")) return;
@@ -2658,10 +3215,20 @@ function toggleConfirmed(id){
   var p = pairById(id); if (p) p.confirmed = !p.confirmed;
   saveStateDoc("pairs", { list: STATE.pairs });
 }
+/* regenerate/clear are the two most destructive buttons in the whole panel, so they ask
+   in-page (ui.fixtureConfirm) rather than with confirm(), which some browsers/webviews
+   silently auto-dismiss — the same pattern as the FAQ delete and "vaciar historial". */
 function generateFixture(){
   var confirmedPairs = STATE.pairs.filter(function(p){ return p.confirmed; });
   if (confirmedPairs.length < 2){ alert("Necesitas al menos 2 parejas confirmadas."); return; }
-  if (STATE.matches.length && !confirm("Ya existe un calendario. Si lo regeneras se perderán los resultados introducidos. ¿Continuar?")) return;
+  if (STATE.matches.length){ ui.fixtureConfirm = "generate"; ui.recompactConfirm = false; mount(); return; }
+  doGenerateFixture();
+}
+function confirmGenerateFixture(){ ui.fixtureConfirm = null; doGenerateFixture(); }
+function cancelFixtureConfirm(){ ui.fixtureConfirm = null; mount(); }
+function doGenerateFixture(){
+  var confirmedPairs = STATE.pairs.filter(function(p){ return p.confirmed; });
+  if (confirmedPairs.length < 2){ mount(); return; }
   var rounds = generateRoundRobin(confirmedPairs);
   var matches = [];
   rounds.forEach(function(roundPairs, idx){
@@ -2672,10 +3239,48 @@ function generateFixture(){
   STATE.matches = matches;
   saveStateDoc("matches", { list: STATE.matches });
 }
-function clearFixture(){
-  if (!confirm("Esto borra todo el calendario de liga y los resultados introducidos. ¿Continuar?")) return;
+function clearFixture(){ ui.fixtureConfirm = "clear"; ui.recompactConfirm = false; mount(); }
+function confirmClearFixture(){
+  ui.fixtureConfirm = null;
   STATE.matches = [];
   saveStateDoc("matches", { list: STATE.matches });
+}
+function askRecompact(){
+  var fecha = valOf("recompact-fecha");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)){ ui.recompactError = "Elige una fecha límite."; mount(); return; }
+  ui.recompactFecha = fecha; ui.recompactError = ""; ui.recompactConfirm = true; ui.fixtureConfirm = null;
+  mount();
+}
+function cancelRecompact(){ ui.recompactConfirm = false; mount(); }
+/* re-plans from the current data at confirm time rather than reusing what was shown,
+   in case a result came in between — and only ever touches matches planRecompact
+   returned, which by construction are unplayed. A changed jornada also clears that
+   match's fecha/hora/pista, since that booking was made for the old jornada. */
+function confirmRecompact(){
+  var fecha = ui.recompactFecha;
+  ui.recompactConfirm = false;
+  var plan = planRecompact();
+  if (!fecha || !plan.length){ mount(); return; }
+  /* built as a copy (untouched matches — every played one — are the very same objects,
+     the planned ones shallow-copied) so a failed write leaves the local view as it was */
+  var planById = {};
+  plan.forEach(function(p){ planById[p.match.id] = p; });
+  var changed = 0;
+  var newList = STATE.matches.map(function(m){
+    var p = planById[m.id];
+    if (!p) return m;
+    var c = Object.assign({}, m);
+    if (p.to !== p.from){ c.jornada = p.to; c.fecha = ""; c.hora = ""; c.pista = ""; changed++; }
+    c.fechaLimite = fecha;
+    return c;
+  });
+  setSaving("Recompactando…");
+  setDoc(doc(db, "state", "matches"), { list: newList }).then(function(){
+    STATE.matches = newList;
+    setSaveResult(true, plan.length+" partido"+(plan.length===1?"":"s")+" pendiente"+(plan.length===1?"":"s")+" actualizado"+(plan.length===1?"":"s")+" ("+changed+" cambiado"+(changed===1?"":"s")+" de jornada), fecha límite "+formatFechaLimite(fecha)+" ✓");
+  }).catch(function(err){
+    setSaveResult(false, "No se pudo guardar la recompactación (" + (err && err.code || "error") + "). No se ha cambiado nada.");
+  });
 }
 function saveMatch(id){
   var m = STATE.matches.filter(function(x){ return x.id===id; })[0];
@@ -2692,6 +3297,8 @@ function saveMatch(id){
   m.fecha = valOf("match-fecha-"+id);
   m.hora = valOf("match-hora-"+id);
   m.pista = valOf("match-pista-"+id);
+  /* the deadline field only exists on unplayed matches — a played one keeps whatever it had */
+  if (document.getElementById("match-fechalimite-"+id)) m.fechaLimite = valOf("match-fechalimite-"+id);
   m.sets = sets;
   m.marcador = sets.map(function(s){ return s.a + "-" + s.b; }).join(", ");
   if (sets.length){
@@ -2701,7 +3308,7 @@ function saveMatch(id){
   } else {
     m.setsA = null; m.setsB = null; m.played = false;
   }
-  if (beforeRows) announceRankingChange(beforeRows, [pairById(m.pairA).j1, pairById(m.pairA).j2, pairById(m.pairB).j1, pairById(m.pairB).j2]);
+  if (beforeRows) announceRankingChange(beforeRows, ligaMatchPlayerKeys(m));
   saveStateDoc("matches", { list: STATE.matches });
 }
 function saveInfo(){
@@ -2749,7 +3356,11 @@ function generateBracketFromStandings(){
   var matches = [];
   for (var i = 0; i < n; i += 2){
     var pairA = rows[order[i] - 1], pairB = rows[order[i+1] - 1];
-    matches.push({ id: uid("bm"), a: pairA.label, b: pairB.label, resultado:"", ganador:"" });
+    var bm = { id: uid("bm"), a: pairA.label, b: pairB.label, resultado:"", ganador:"" };
+    var prA = pairById(pairA.id), prB = pairById(pairB.id);
+    if (prA && prA.j1Id && prA.j2Id) bm.aIds = [prA.j1Id, prA.j2Id];
+    if (prB && prB.j1Id && prB.j2Id) bm.bIds = [prB.j1Id, prB.j2Id];
+    matches.push(bm);
   }
   STATE.bracket.push({ id: uid("r"), name: roundNames[n] || (n+" parejas"), matches: matches, torneo: torneo });
   saveStateDoc("bracket", { rounds: STATE.bracket });
@@ -2802,7 +3413,11 @@ function addBracketMatch(roundId){
   if (!round) return;
   var a = bracketSideLabel(roundId, "a"), b = bracketSideLabel(roundId, "b");
   if (!a || !b){ alert("Escribe los dos jugadores de cada pareja, o marca \"Por definir\" en la que todavía no se sepa."); return; }
-  round.matches.push({ id: uid("bm"), a:a, b:b, resultado:"", ganador:"" });
+  var bm = { id: uid("bm"), a:a, b:b, resultado:"", ganador:"" };
+  var aIds = resolveLabelIds(a), bIds = resolveLabelIds(b);
+  if (aIds) bm.aIds = aIds;
+  if (bIds) bm.bIds = bIds;
+  round.matches.push(bm);
   saveStateDoc("bracket", { rounds: STATE.bracket });
 }
 function deleteBracketMatch(roundId, matchId){
@@ -2833,6 +3448,15 @@ function saveBracketMatch(roundId, matchId){
   var sel = document.getElementById("bm-ganador-"+matchId);
   var selVal = sel ? sel.value : "";
   var ganador = selVal === "" ? "" : selVal === m.a ? newA : selVal === m.b ? newB : "";
+  /* ids follow the text: an unchanged side keeps its ids (and gains them if it can now be
+     resolved); a side retyped to someone else gets that pair's ids, or none if it can't
+     be tied to exactly one pair */
+  [["a", newA], ["b", newB]].forEach(function(x){
+    var side = x[0], text = x[1], f = side + "Ids";
+    if (text === m[side] && Array.isArray(m[f])) return;
+    var ids = resolveLabelIds(text);
+    if (ids) m[f] = ids; else delete m[f];
+  });
   m.a = newA;
   m.b = newB;
   m.sets = sets;
@@ -2869,20 +3493,18 @@ function deleteFaq(id){
 function acceptRequest(id){
   var r = STATE.inscripciones.filter(function(x){ return x.id===id; })[0];
   if (!r) return;
-  var p = { id: uid("p"), j1:r.j1, j2:r.j2, contacto:r.contacto, confirmed:true, pin: String(Math.floor(1000 + Math.random() * 9000)) };
-  STATE.pairs.push(p);
+  var p = newPairRecord(r.j1, r.j2, r.contacto), pin = newPin();
   setSaving("Guardando…");
-  Promise.all([
-    setDoc(doc(db,"state","pairs"), { list: STATE.pairs }),
-    updateDoc(doc(db,"inscripciones", id), { status: "accepted" })
-  ]).then(function(){
-    if (!isEmailContact(p.contacto)){
+  commitPairsWithPins(STATE.pairs.concat([p]), [{ id: p.id, pin: pin }], function(batch){
+    batch.update(doc(db, "inscripciones", id), { status: "accepted" });
+  }).then(function(){
+    if (!isEmailContact(pairContacto(p))){
       setSaveResult(true, "Pareja añadida y solicitud aceptada ✓");
       return;
     }
-    return sendPinEmail(p).then(function(sent){
+    return sendPinEmail(p, pin).then(function(sent){
       setSaveResult(sent, sent
-        ? "Pareja aceptada y PIN enviado por email a " + p.contacto + " ✓ — avísales de que puede caer en spam la primera vez."
+        ? "Pareja aceptada y PIN enviado por email a " + pairContacto(p) + " ✓ — avísales de que puede caer en spam la primera vez."
         : "Pareja aceptada, pero no se pudo enviar el email — comparte el PIN a mano.");
     });
   }).catch(function(){
@@ -2971,6 +3593,12 @@ document.addEventListener("click", function(e){
     case "toggle-confirmed": toggleConfirmed(id); break;
     case "generate-fixture": generateFixture(); break;
     case "clear-fixture": clearFixture(); break;
+    case "confirm-generate-fixture": confirmGenerateFixture(); break;
+    case "confirm-clear-fixture": confirmClearFixture(); break;
+    case "cancel-fixture-confirm": cancelFixtureConfirm(); break;
+    case "ask-recompact": askRecompact(); break;
+    case "confirm-recompact": confirmRecompact(); break;
+    case "cancel-recompact": cancelRecompact(); break;
     case "save-match": saveMatch(id); break;
     case "save-info": saveInfo(); break;
     case "add-round": addRound(); break;
@@ -3005,6 +3633,9 @@ document.addEventListener("click", function(e){
     case "close-player": closePlayerModal(); break;
     case "try-player-access": tryPlayerAccess(); break;
     case "player-logout": playerLogout(); break;
+    case "player-correct": startPlayerCorrection(el.getAttribute("data-key")); break;
+    case "player-correct-cancel": cancelPlayerCorrection(); break;
+    case "save-player-contact": savePlayerContact(); break;
     case "submit-player-result": submitPlayerResult(el.getAttribute("data-tipo"), id, el.getAttribute("data-round") || null); break;
     case "share-result": shareResult(el.getAttribute("data-tipo"), id, el.getAttribute("data-round") || null); break;
     case "share-ranking": shareRanking(); break;
@@ -3028,6 +3659,12 @@ document.addEventListener("keydown", function(e){
    and cursor position after the re-render (see mount()), so typing doesn't stutter. */
 document.addEventListener("input", function(e){
   if (e.target.id === "ranking-search"){ ui.rankingSearch = e.target.value; mount(); }
+  /* kept as drafts (no mount) so a re-render triggered by some unrelated live update
+     — someone else's result landing — doesn't wipe what's half-typed into these */
+  else if (e.target.id === "player-contacto"){ ui.playerContactDraft = e.target.value; }
+  else if (e.target.id === "player-j1"){ ui.playerName1Draft = e.target.value; }
+  else if (e.target.id === "player-j2"){ ui.playerName2Draft = e.target.value; }
+  else if (e.target.id === "recompact-fecha"){ ui.recompactFecha = e.target.value; }
 });
 document.addEventListener("click", function(e){
   var toggle = e.target.closest(".password-toggle");
@@ -3057,8 +3694,23 @@ onSnapshot(doc(db,"state","emailUsage"), function(snap){
 
 onSnapshot(doc(db,"state","pairs"), function(snap){
   STATE.pairs = (snap.exists() && snap.data().list) || [];
-  STATE.loaded.pairs = true; mount();
-}, function(){ STATE.loaded.pairs = true; mount(); });
+  STATE.loaded.pairs = true; STATE.loadFailed.pairs = false; mount(); scheduleAdminMigrations();
+}, function(){ STATE.loaded.pairs = true; STATE.loadFailed.pairs = true; mount(); });
+
+/* each pair's own contact-email edit (see pairContacto/savePlayerContact). If the rules
+   for this collection aren't published yet the read is just refused and every pair
+   keeps showing its original state/pairs contact. */
+onSnapshot(collection(db, "pairContacts"), function(qs){
+  var map = {};
+  qs.docs.forEach(function(d){
+    var data = d.data() || {};
+    var ts = data.actualizadoEn;
+    map[d.id] = { contacto: data.contacto || "", j1: data.j1, j2: data.j2,
+      /* a just-made local write has no server time yet — treat it as "now" */
+      actualizadoEnMs: ts && ts.toMillis ? ts.toMillis() : Date.now() };
+  });
+  STATE.pairContacts = map; mount();
+}, function(){});
 
 onSnapshot(doc(db,"state","matches"), function(snap){
   STATE.matches = (snap.exists() && snap.data().list) || [];
@@ -3067,8 +3719,8 @@ onSnapshot(doc(db,"state","matches"), function(snap){
 
 onSnapshot(doc(db,"state","bracket"), function(snap){
   STATE.bracket = (snap.exists() && snap.data().rounds) || [];
-  STATE.loaded.bracket = true; mount();
-}, function(){ STATE.loaded.bracket = true; mount(); });
+  STATE.loaded.bracket = true; STATE.loadFailed.bracket = false; mount(); scheduleAdminMigrations();
+}, function(){ STATE.loaded.bracket = true; STATE.loadFailed.bracket = true; mount(); });
 
 onSnapshot(doc(db,"state","faqs"), function(snap){
   if (snap.exists() && snap.data().list && snap.data().list.length) STATE.faqs = snap.data().list;
@@ -3114,6 +3766,7 @@ onAuthStateChanged(auth, function(user){
      account enforcement (see voteCamiseta) even if they never log into a pair account,
      so silently fall into an anonymous session when nobody's signed in at all. */
   if (!user) signInAnonymously(auth).catch(function(){});
+  verifyStoredPlayerSession(user);
   reconcileCamisetaVote();
   if (ui.unlocked && !inscripcionesUnsub){
     inscripcionesUnsub = onSnapshot(collection(db, "inscripciones"), function(qs){
@@ -3128,8 +3781,101 @@ onAuthStateChanged(auth, function(user){
     inscripcionesUnsub(); inscripcionesUnsub = null;
     STATE.inscripciones = []; STATE.loaded.inscripciones = false;
   }
+  if (ui.unlocked && !pairPinsUnsub){
+    pairPinsUnsub = onSnapshot(collection(db, "pairPins"), function(qs){
+      var map = {};
+      qs.docs.forEach(function(d){ map[d.id] = (d.data() || {}).pin; });
+      STATE.pairPins = map; STATE.loaded.pairPins = true; scheduleAdminMigrations();
+    }, function(){ STATE.loaded.pairPins = false; });
+  } else if (!ui.unlocked && pairPinsUnsub){
+    pairPinsUnsub(); pairPinsUnsub = null; STATE.pairPins = {}; STATE.loaded.pairPins = false;
+  }
   mount();
+  scheduleAdminMigrations();
 });
+var pairPinsUnsub = null;
+
+/* ---------- one-time, idempotent data migrations (organizer session only) ----------
+   Three steps, strictly one after the other (each run does the first one that still has
+   work; the snapshot its write triggers schedules the next):
+   1) ids: j1Id/j2Id on pairs that lack them, aIds/bIds on cuadros sides that can be tied
+      to exactly one pair (planIdMigration). state/pairs and state/bracket only GAIN
+      fields; every existing value is written back exactly as read.
+   2) PIN copy: pairPins/{pairId} for every pair whose PIN is still in state/pairs and
+      isn't in pairPins yet (or differs — then state/pairs is the one the pair was given).
+      Nobody's PIN changes.
+   3) PIN removal: for pairs whose pairPins copy is confirmed equal BY A READ FROM THE
+      SERVER (not the local cache), the `pin` field is removed from the public state/pairs
+      list. That's the only value this ever removes, and only once it's safe elsewhere.
+   Never runs on data that failed to load (an empty list there means "unknown", not
+   "no pairs"). With nothing left to do it writes nothing. */
+var migrationTimer = null, migrationBusy = false;
+function scheduleAdminMigrations(){
+  if (migrationTimer) return;
+  migrationTimer = setTimeout(function(){ migrationTimer = null; runAdminMigrations(); }, 0);
+}
+function finishMigration(promise){
+  migrationBusy = true;
+  promise.then(function(msg){
+    migrationBusy = false;
+    if (msg) setSaveResult(true, "Datos actualizados: " + msg + " ✓");
+    scheduleAdminMigrations();
+  }, function(err){
+    migrationBusy = false;
+    setSaveResult(false, "Actualización de datos pendiente (" + (err && err.code || "error") + ") — se reintentará al volver a entrar. No se ha cambiado ningún dato.");
+  });
+}
+function runAdminMigrations(){
+  if (!ui.unlocked || migrationBusy) return;
+  if (!STATE.loaded.pairs || !STATE.loaded.bracket || STATE.loadFailed.pairs || STATE.loadFailed.bracket) return;
+  /* 1) ids */
+  var plan = planIdMigration();
+  if (plan.pairsChanged || plan.sidesResolved){
+    var batch = writeBatch(db);
+    if (plan.pairsChanged) batch.set(doc(db, "state", "pairs"), { list: plan.pairs });
+    if (plan.sidesResolved) batch.set(doc(db, "state", "bracket"), { rounds: plan.rounds });
+    finishMigration(batch.commit().then(function(){
+      if (plan.pairsChanged) STATE.pairs = plan.pairs;
+      if (plan.sidesResolved) STATE.bracket = plan.rounds;
+      return "ids de jugador añadidos a " + plan.pairsChanged + " pareja" + (plan.pairsChanged===1?"":"s")
+        + (plan.sidesResolved ? " y a " + plan.sidesResolved + " lado" + (plan.sidesResolved===1?"":"s") + " de cuadros" : "");
+    }));
+    return;
+  }
+  if (!STATE.loaded.pairPins) return;
+  /* 2) PIN copy */
+  var toCopy = STATE.pairs.filter(function(p){ return p.pin && STATE.pairPins[p.id] !== p.pin; });
+  if (toCopy.length){
+    var pinBatch = writeBatch(db);
+    toCopy.forEach(function(p){ pinBatch.set(doc(db, "pairPins", p.id), { pin: p.pin }); });
+    finishMigration(pinBatch.commit().then(function(){
+      toCopy.forEach(function(p){ STATE.pairPins[p.id] = p.pin; });
+      return "PIN copiado a pairPins para " + toCopy.length + " pareja" + (toCopy.length===1?"":"s");
+    }));
+    return;
+  }
+  /* 3) PIN removal, only after a server read confirms each copy */
+  var toRemove = STATE.pairs.filter(function(p){ return p.pin && STATE.pairPins[p.id] === p.pin; });
+  if (!toRemove.length) return;
+  finishMigration(Promise.all(toRemove.map(function(p){
+    return getDocFromServer(doc(db, "pairPins", p.id)).then(function(snap){
+      return { id: p.id, pin: snap.exists() ? snap.data().pin : null };
+    });
+  })).then(function(checked){
+    var verified = {};
+    checked.forEach(function(c){ if (c.pin) verified[c.id] = c.pin; });
+    var removed = 0;
+    var list = STATE.pairs.map(function(p){
+      if (!p.pin || verified[p.id] !== p.pin) return p;
+      var c = Object.assign({}, p); delete c.pin; removed++; return c;
+    });
+    if (!removed) return "";
+    return setDoc(doc(db, "state", "pairs"), { list: list }).then(function(){
+      STATE.pairs = list;
+      return "PIN retirado de la lista pública de parejas para " + removed + " pareja" + (removed===1?"":"s") + " (ya solo está en pairPins)";
+    });
+  }));
+}
 
 /* ---------- back to top ---------- */
 var backToTopBtn = document.getElementById("back-to-top");

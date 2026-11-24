@@ -1,0 +1,120 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'alexruicha@gmail.com';
+    }
+
+    function rateLimitOk() {
+      return !exists(/databases/$(database)/documents/rateLimits/$(request.auth.uid))
+        || request.time > get(/databases/$(database)/documents/rateLimits/$(request.auth.uid)).data.lastAt + duration.value(20, 's');
+    }
+
+    match /state/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /inscripciones/{docId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // a result sent from the player panel. Only from a browser with a live session for
+    // the pair it claims to come from (see playerSessions), and rate-limited.
+    match /revisiones/{docId} {
+      allow read: if true;
+      allow create: if request.auth != null && rateLimitOk()
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.pairId is string
+                    && hasSessionFor(request.resource.data.pairId);
+      allow update, delete: if isAdmin();
+    }
+
+    // each pair's PIN — the ONLY place it lives (it's no longer in the public state/pairs
+    // list). Organizer-only, in both directions: no player and no visitor can read a PIN.
+    match /pairPins/{pairId} {
+      allow read, write: if isAdmin();
+    }
+
+    // player login. The browser (anonymous auth) writes playerSessions/{its own uid} with
+    // the pair it picked and the PIN it was told; the write is accepted only when that PIN
+    // equals pairPins/{pairId}.pin, so a successful write IS the PIN check — the browser
+    // never reads anyone's PIN. Readable only by its owner (it holds the PIN the owner
+    // typed). Deleting it is logging out.
+    match /playerSessions/{uid} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['pairId', 'pin', 'creadoEn'])
+        && request.resource.data.pairId is string
+        && request.resource.data.pin is string
+        && exists(/databases/$(database)/documents/pairPins/$(request.resource.data.pairId))
+        && request.resource.data.pin == get(/databases/$(database)/documents/pairPins/$(request.resource.data.pairId)).data.pin;
+    }
+
+    // true when the signed-in user has a session for pairId whose PIN is still that pair's
+    // CURRENT PIN — a new PIN from the organizer ends every older session of that pair.
+    function hasSessionFor(pairId) {
+      let session = /databases/$(database)/documents/playerSessions/$(request.auth.uid);
+      let pins = /databases/$(database)/documents/pairPins/$(pairId);
+      return request.auth != null
+        && exists(session) && exists(pins)
+        && get(session).data.pairId == pairId
+        && get(session).data.pin == get(pins).data.pin;
+    }
+    function optionalName(field) {
+      return !(field in request.resource.data)
+        || (request.resource.data[field] is string
+            && request.resource.data[field].size() > 0
+            && request.resource.data[field].size() <= 60
+            && !request.resource.data[field].matches('.*/.*'));
+    }
+
+    // a pair's own display names (j1/j2) and contact email, edited from the player panel.
+    // state/pairs stays admin-only and keeps the original names/contacto; the app shows
+    // this doc on top of it. Publicly readable, so it never holds a PIN: the write is
+    // authorized by the writer's session (hasSessionFor), not by anything in the doc.
+    match /pairContacts/{pairId} {
+      allow read: if true;
+      allow create, update: if hasSessionFor(pairId)
+        && request.resource.data.keys().hasOnly(['contacto', 'j1', 'j2', 'actualizadoEn'])
+        && (!('contacto' in request.resource.data)
+            || (request.resource.data.contacto is string
+                && request.resource.data.contacto.size() < 120
+                && request.resource.data.contacto.matches('.+@.+[.].+')))
+        && optionalName('j1')
+        && optionalName('j2');
+      allow delete: if isAdmin();
+    }
+
+    match /rateLimits/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // camiseta vote: designs are organizer-managed (like /state). Votes don't need a
+    // real login (see signInAnonymously in the app); the doc ID is forced to equal the
+    // voter's own auth uid so re-voting from the same account/browser is a real
+    // server-side rejection, not just a client-side courtesy. A vote starts as
+    // estado:"pendiente" and only counts once the organizer flips it to "aprobada" from
+    // the admin Camisetas tab (same pending/accept/reject shape as inscripciones and
+    // revisiones) — that manual check is what actually catches someone voting more than
+    // once from different browsers, which the uid-per-doc rule alone can't.
+    match /camisetas/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /camisetaVotos/{uid} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.uid == uid
+                    && request.resource.data.estado == 'pendiente'
+                    && request.resource.data.nombre is string
+                    && request.resource.data.nombre.size() > 0
+                    && request.resource.data.nombre.size() < 60;
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+  }
+}

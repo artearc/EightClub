@@ -11,6 +11,7 @@
 @property --hero-num-hot{ syntax:'<number>'; inherits:true; initial-value:0; }
 
 :root{
+  color-scheme:light;
   /* natural palette — warm beige canvas, olive green predominant, terracotta orange as the
      one punctual contrast accent, dark olive for text */
   --color-beige:#e8e1cc;      /* page canvas — warm, not white */
@@ -279,6 +280,10 @@ input,textarea,select{font:inherit;color:inherit;}
 .field input,.field textarea,.field select{border:1.5px solid rgba(var(--ink-rgb),.16);border-radius:var(--radius-medium);padding:.7rem .95rem;background:var(--surface-input);color:var(--ink);font-size:.95rem;transition:border-color .15s,background .15s;}
 .field input,.field select{border-radius:var(--radius-inputs);}
 .field input:focus,.field textarea:focus,.field select:focus{border-color:var(--signal);background:var(--signal-tint);}
+/* a <select>'s open list is drawn by the OS, not the page: without color-scheme (see
+   :root / [data-theme="dark"]) it stays white in dark mode while the options inherit the
+   light --ink text — white on white. Explicit option colors cover browsers that ignore it. */
+select option{background-color:var(--bg-elevated);color:var(--ink);}
 /* the "Ver"/"Ocultar" toggle sits inside the password pill itself, right-aligned; the
    input is always the last child of .field--password with nothing after it, so anchoring
    the button to the container's own bottom edge lines it up with the input in both the
@@ -745,6 +750,7 @@ html.kiosk-mode{font-size:150%;}
    existing one more widely now that there's a surface (the whole page) worth blurring
    behind it. */
 :root[data-theme="dark"]{
+  color-scheme:dark;
   --color-beige:#1c1e14;
   --color-card:#26281b;
   --color-dark-olive:#eee7d3;
@@ -827,3 +833,58 @@ html.kiosk-mode{font-size:150%;}
   color:var(--signal);
 }
 
+
+/* score grid — one row per pair with its name always visible next to its three set
+   boxes (used for result entry in the player panel and the organizer's Liga/Cuadros
+   tabs, and read-only for played matches/revisiones), so it's never ambiguous whose
+   games go in which box once the placeholders are gone. */
+.score-grid{display:grid;gap:.35rem;margin:.6rem 0 .8rem;max-width:420px;}
+.score-grid-row{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,2.8rem);gap:.4rem;align-items:center;}
+.score-grid-head{font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);text-align:center;}
+.score-grid-name{min-width:0;font-size:.86rem;font-weight:600;line-height:1.25;overflow-wrap:anywhere;}
+.score-grid-name small{display:block;font-size:.74rem;font-weight:500;color:var(--ink-faint);}
+.score-grid .bm-set-input{width:100%;margin:0;}
+.score-grid-cell{display:flex;align-items:center;justify-content:center;height:2rem;border-radius:var(--radius-inputs);background:rgba(var(--ink-rgb),.06);font-variant-numeric:tabular-nums;font-weight:600;}
+.score-grid-row--winner .score-grid-name{color:var(--signal);}
+.score-grid-row--winner .score-grid-cell{background:var(--signal-tint);color:var(--signal);}
+
+/* deadline after a recompaction — terracotta, the one "pay attention" accent */
+.deadline-tag{color:var(--danger);font-weight:600;}
+.next-match-deadline{font-size:.86rem;margin:-.4rem 0 .8rem;}
+
+/* in-page confirmations (instead of the browser's native confirm()) */
+.inline-confirm{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;}
+.recompact-card{border:1.5px solid var(--border);border-radius:var(--radius-medium);padding:1rem 1.1rem;margin:1rem 0;background:var(--bg);}
+.recompact-card h4{margin:0 0 .4rem;font-size:.95rem;}
+.recompact-card--confirm{border-color:var(--danger);}
+.recompact-controls{display:flex;flex-wrap:wrap;align-items:flex-end;gap:.7rem;margin-top:.7rem;}
+.recompact-controls .field{min-width:160px;}
+.recompact-list{margin:.6rem 0 0;padding-left:1.1rem;list-style:disc;font-size:.84rem;max-height:260px;overflow-y:auto;}
+.recompact-list li{margin:.2rem 0;}
+
+/* player panel */
+.modal-panel--player{max-width:600px;}
+.player-pair-line{font-size:.9rem;color:var(--ink-soft);margin-bottom:.4rem;}
+.player-empty{padding:1rem 1.2rem;margin:1rem 0;border-radius:var(--radius-medium);background:var(--signal-tint);color:var(--signal);font-weight:600;}
+.player-section{margin-top:1.6rem;}
+.player-section-title{display:flex;align-items:center;gap:.5rem;margin:0 0 .7rem;font-family:var(--font-display);font-weight:400;font-size:1.15rem;letter-spacing:.02em;}
+.player-section-count{display:inline-flex;align-items:center;justify-content:center;min-width:1.5rem;height:1.5rem;padding:0 .4rem;border-radius:var(--radius-pill);background:rgba(var(--ink-rgb),.08);font-family:var(--font-body);font-size:.75rem;font-weight:600;}
+.pm-card{border:1.5px solid var(--border);border-radius:var(--radius-medium);padding:.9rem 1rem;margin-bottom:.7rem;background:var(--bg);}
+.pm-card--played{background:transparent;}
+.pm-head{display:flex;justify-content:space-between;align-items:flex-start;gap:.6rem;}
+.pm-head-side{display:flex;align-items:center;gap:.5rem;flex-shrink:0;}
+.pm-etiqueta{font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-faint);}
+.pm-vs{font-weight:700;font-size:.98rem;line-height:1.3;}
+.pm-card .match-meta{display:block;margin:.2rem 0 .3rem;}
+.pm-note{font-size:.82rem;color:var(--ink-soft);margin:.4rem 0;}
+.pm-rejected{font-size:.82rem;color:var(--danger);font-weight:600;margin:.5rem 0;}
+.pm-result{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:.2rem .6rem;border-radius:var(--radius-pill);}
+.pm-result--win{background:var(--signal-tint);color:var(--signal);}
+.pm-result--loss{background:rgba(var(--ink-rgb),.08);color:var(--ink-soft);}
+.player-data-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.6rem;}
+.player-data-form .player-data-email{grid-column:1/-1;}
+@media (max-width:480px){ .player-data-form{grid-template-columns:1fr;} }
+.unresolved-note{margin:0 0 1rem;font-size:.84rem;border:1.5px dashed var(--border);border-radius:var(--radius-medium);padding:.6rem .9rem;}
+.unresolved-note summary{cursor:pointer;font-weight:600;color:var(--ink-soft);}
+.unresolved-note ul{margin:.5rem 0 0;padding-left:1.1rem;list-style:disc;}
+.org-row .grow small + small{display:block;}
